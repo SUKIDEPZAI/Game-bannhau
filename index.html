@@ -1,3 +1,37 @@
 <!doctype html>
-<html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><title>Adaptive Battlefield AI</title><link rel="stylesheet" href="style.css"></head>
-<body><div id="game"></div><div id="hud"><div class="top"><span id="hp">HP 100</span><span id="ammo">30 / 120</span><span id="kills">KILLS 0</span><span id="match">MATCH 1</span></div><div id="cross">+</div><div id="msg"></div><div id="ai"><b>BOT LEARNING</b><div id="stats"></div></div><div id="mobile"><button id="fire">BẮN</button><button id="reload">NẠP</button><button id="heal">HỒI MÁU</button></div><div id="help">WASD di chuyển · Chuột/cảm ứng xoay · Click bắn · R nạp · H hồi máu · N trận mới</div></div><script type="module" src="game.js"></script></body></html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Adaptive Battlefield</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="game"></div>
+<div id="hud">
+  <div class="top">
+    <div class="brand">ADAPTIVE <span>BATTLEFIELD</span></div>
+    <div class="stat"><b id="hp">100</b><small>HP</small></div>
+    <div class="stat"><b id="ammo">30</b><small> / 120</small></div>
+    <div class="stat"><b id="kills">0</b><small>KILLS</small></div>
+    <div class="stat"><b id="match">1</b><small>MATCH</small></div>
+  </div>
+  <div id="damage"></div>
+  <div id="crosshair"><i></i><i></i><i></i><i></i><b>•</b></div>
+  <div id="message"></div>
+  <div id="minimap"><canvas id="map" width="150" height="150"></canvas></div>
+  <div id="ai"><strong>ADAPTIVE AI</strong><div id="stats"></div></div>
+  <div id="weapon"><div class="gun"></div><div class="mag"></div></div>
+  <div id="mobile">
+    <div id="stick"><div id="knob"></div></div>
+    <div id="lookZone"></div>
+    <button id="fire">●</button>
+    <button id="reload">↻</button>
+    <button id="heal">✚</button>
+    <button id="sprint">⇧</button>
+  </div>
+  <div id="help">WASD · SHIFT chạy · Chuột xoay · CLICK bắn · R nạp · H hồi máu · N trận mới</div>
+</div>
+<script type="module" src="game.js"></script>
+</body>
+</html>
