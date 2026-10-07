@@ -1,22 +1,28 @@
-# AI Body Tracking Pro
+# AI Pose Tracking — Skeleton v2 Pro
 
-GitHub Pages-ready single-page pose camera.
+GitHub Pages-ready single-page AI body tracking camera.
 
-## Features
-- Full-screen camera
-- Neon multi-color skeleton
-- Stable multi-person tracking IDs
-- Live elbow/knee angles
-- Radar/HUD body map
-- Pose confidence bars
-- FPS + latency telemetry
-- Smoothed gesture classification
-- Raised hand / squat / push-up / jump / movement / standing
-- Mobile front/rear camera switch
-- Client-side MediaPipe Pose Landmarker
+## Skeleton v2 Pro
+- Full MediaPipe 33-point pose graph
+- Neon layered bones: glow + crisp core
+- Confidence-aware joints and bones
+- Depth-aware joint sizing using landmark Z
+- Per-person stable tracking ID
+- Motion trails for wrists and knees
+- Temporal pose ghosting for fast movement
+- Head tracking reticle + live tracking quality
+- Realtime elbow and knee angles
+- Smoothed action recognition
+- Radar/HUD telemetry
+- Full-screen responsive camera for PC and mobile
+- Front/rear camera switch
+- Runs client-side in the browser
 
 ## GitHub Pages
-Upload `index.html` to a public repository and enable:
-Settings -> Pages -> Deploy from branch -> main -> / (root).
+1. Upload `index.html` and `README.md` to the repository root.
+2. GitHub → Settings → Pages.
+3. Source: Deploy from a branch.
+4. Select `main` + `/ (root)`.
+5. Open the generated Pages URL over HTTPS.
 
-Then open the generated `github.io` URL over HTTPS and grant camera permission.
+Camera access requires a secure context such as GitHub Pages HTTPS or localhost.

@@ -184,13 +184,23 @@
     leftFoot:31, rightFoot:32
   };
 
+  // Full 33-point pose graph: body + feet + a lightweight face frame.
   const BONES = [
-    [11,12],[11,13],[13,15],[12,14],[14,16],
+    [11,12],
+    [11,13],[13,15],[12,14],[14,16],
     [11,23],[12,24],[23,24],
-    [23,25],[25,27],[27,29],[27,31],
-    [24,26],[26,28],[28,30],[28,32],
-    [0,11],[0,12],[11,24],[12,23]
+    [23,25],[25,27],[27,29],[27,31],[29,31],
+    [24,26],[26,28],[28,30],[28,32],[30,32],
+    [0,11],[0,12],[11,24],[12,23],
+    [2,5],[2,7],[5,8],[7,9],[8,10],
+    [0,2],[0,5],[11,23],[12,24]
   ];
+  const JOINT_GROUPS = {
+    head:new Set([0,1,2,3,4,5,6,7,8,9,10]),
+    upper:new Set([11,12,13,14,15,16]),
+    core:new Set([23,24]),
+    lower:new Set([25,26,27,28,29,30,31,32])
+  };
 
   const COLORS = ["#00f5a0","#45a3ff","#ffdc3a","#ff4fa3","#b96cff","#ff7b52","#72f2ff","#d4ff59"];
 
@@ -317,7 +327,16 @@
     }
 
     for(const {t,d} of matches){
+      // Keep a tiny temporal buffer for motion trails / ghost poses.
+      if(t.lm) t.poseGhosts.push(t.lm);
+      if(t.poseGhosts.length>3) t.poseGhosts.shift();
       t.lm=d.lm; t.center=d.center; t.scale=d.scale; t.missed=0;
+      const root=rootOf(d.lm);
+      t.history.push({x:root.x,y:root.y,
+        lw:d.lm[P.leftWrist],rw:d.lm[P.rightWrist],
+        lk:d.lm[P.leftKnee],rk:d.lm[P.rightKnee]});
+      if(t.history.length>18) t.history.shift();
+      t.quality=d.lm.reduce((sum,p)=>sum+(p?.visibility??1),0)/d.lm.length;
     }
     for(const t of active) if(!usedT.has(t.id)) t.missed++;
     for(const d of candidates){
@@ -325,7 +344,8 @@
       const t={
         id:nextId++, lm:d.lm, center:d.center, scale:d.scale, missed:0,
         action:"Đứng",confidence:.5,candidate:"",candidateFrames:0,
-        root:rootOf(d.lm),prevRootY:rootOf(d.lm).y,wasRising:false,lowFootY:null,jumpCooldown:0
+        root:rootOf(d.lm),prevRootY:rootOf(d.lm).y,wasRising:false,lowFootY:null,jumpCooldown:0,
+        history:[], poseGhosts:[], quality:0
       };
       tracks.set(t.id,t);
     }
@@ -338,41 +358,84 @@
     canvas.width=video.videoWidth; canvas.height=video.videoHeight;
   }
 
+  function pointXY(p){ return [p.x*canvas.width,p.y*canvas.height]; }
+
+  function drawGhostPose(lm,color,alpha){
+    if(!lm) return;
+    ctx.save();
+    ctx.globalAlpha=alpha; ctx.lineCap="round"; ctx.lineJoin="round";
+    ctx.strokeStyle=color; ctx.shadowColor=color; ctx.shadowBlur=8; ctx.lineWidth=Math.max(2,canvas.width/520);
+    for(const [a,b] of BONES){
+      const p=lm[a],q=lm[b]; if(!valid(p)||!valid(q)) continue;
+      const [x,y]=pointXY(p),[xx,yy]=pointXY(q);
+      ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(xx,yy);ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawTrail(t,color){
+    const keys=["lw","rw","lk","rk"];
+    ctx.save(); ctx.lineCap="round"; ctx.lineWidth=Math.max(2,canvas.width/500);
+    for(const key of keys){
+      const pts=t.history.map(h=>h[key]).filter(Boolean); if(pts.length<2) continue;
+      ctx.globalAlpha=.28; ctx.strokeStyle=color; ctx.shadowColor=color; ctx.shadowBlur=10;
+      ctx.beginPath();
+      pts.forEach((p,i)=>{const [x,y]=pointXY(p); i?ctx.lineTo(x,y):ctx.moveTo(x,y);});
+      ctx.stroke();
+      const p=pts[pts.length-1]; const [x,y]=pointXY(p);
+      ctx.globalAlpha=.75; ctx.beginPath();ctx.arc(x,y,3,0,Math.PI*2);ctx.fillStyle=color;ctx.fill();
+    }
+    ctx.restore();
+  }
+
   function drawPerson(t){
     const lm=t.lm, color=COLORS[(t.id-1)%COLORS.length];
-    ctx.save();
-    ctx.lineJoin="round";ctx.lineCap="round";
-    ctx.shadowColor=color;ctx.shadowBlur=16;
-    ctx.lineWidth=Math.max(4,canvas.width/320);
-    ctx.strokeStyle=color;
+    const quality=clamp(t.quality??.7,.25,1);
+    ctx.save(); ctx.lineJoin="round";ctx.lineCap="round";
+
+    // Temporal ghosting makes fast movement readable without changing detection.
+    t.poseGhosts.forEach((ghost,i)=>drawGhostPose(ghost,color,.06+i*.025));
+    drawTrail(t,color);
+
+    // Outer glow + crisp core. Low-confidence joints fade instead of producing broken-looking limbs.
+    ctx.shadowColor=color; ctx.shadowBlur=18+quality*12;
     for(const [a,b] of BONES){
-      const p=lm[a],q=lm[b];
-      if(!valid(p)||!valid(q)) continue;
-      ctx.beginPath();
-      ctx.moveTo(p.x*canvas.width,p.y*canvas.height);
-      ctx.lineTo(q.x*canvas.width,q.y*canvas.height);
-      ctx.stroke();
+      const p=lm[a],q=lm[b]; if(!valid(p)||!valid(q)) continue;
+      const conf=Math.min(p.visibility??1,q.visibility??1);
+      const [x,y]=pointXY(p),[xx,yy]=pointXY(q);
+      const depth=clamp(1-(((p.z??0)+(q.z??0))/2)*.55,.72,1.28);
+      ctx.globalAlpha=.30+.70*conf;
+      ctx.lineWidth=Math.max(3,canvas.width/360)*depth;
+      ctx.strokeStyle=color; ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(xx,yy);ctx.stroke();
+      ctx.shadowBlur=4; ctx.globalAlpha=.95*conf; ctx.lineWidth=Math.max(1.5,canvas.width/650)*depth;
+      ctx.strokeStyle="#f7fbff"; ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(xx,yy);ctx.stroke();
+      ctx.shadowBlur=18+quality*12;
     }
-    ctx.shadowBlur=22;
-    for(const p of lm){
-      if(!valid(p)) continue;
-      const x=p.x*canvas.width,y=p.y*canvas.height;
-      ctx.beginPath();ctx.arc(x,y,Math.max(3.5,canvas.width/260),0,Math.PI*2);
-      ctx.fillStyle="#ffffff";ctx.fill();
-      ctx.beginPath();ctx.arc(x,y,Math.max(2.2,canvas.width/380),0,Math.PI*2);
-      ctx.fillStyle=color;ctx.fill();
+
+    // Joint nodes: depth affects radius, confidence affects opacity.
+    for(let i=0;i<lm.length;i++){
+      const p=lm[i]; if(!valid(p)) continue;
+      const [x,y]=pointXY(p);
+      const conf=clamp(p.visibility??1,0,1);
+      const depth=clamp(1-(p.z??0)*.55,.72,1.35);
+      const group=JOINT_GROUPS.head.has(i)?"head":JOINT_GROUPS.upper.has(i)?"upper":JOINT_GROUPS.core.has(i)?"core":"lower";
+      const base=group==="head"?4.2:group==="core"?5.4:4.8;
+      const r=Math.max(2.8,canvas.width/400)*depth*(.8+.3*conf);
+      ctx.globalAlpha=.30+.70*conf; ctx.shadowColor=color;ctx.shadowBlur=12;
+      ctx.beginPath();ctx.arc(x,y,r+2,0,Math.PI*2);ctx.fillStyle=color;ctx.fill();
+      ctx.shadowBlur=0; ctx.beginPath();ctx.arc(x,y,r*.52,0,Math.PI*2);ctx.fillStyle="#fff";ctx.fill();
     }
-    // Tracking reticle + ID near head.
+
+    // Head reticle + quality ring + ID.
     const head=lm[P.nose]||avg(lm[P.leftShoulder],lm[P.rightShoulder]);
-    const hx=head.x*canvas.width,hy=head.y*canvas.height;
-    ctx.shadowColor=color;ctx.shadowBlur=18;ctx.strokeStyle=color;ctx.lineWidth=2;
-    ctx.beginPath();ctx.arc(hx,hy-36,17,0,Math.PI*2);ctx.stroke();
+    const [hx,hy]=pointXY(head);
+    ctx.globalAlpha=1; ctx.shadowColor=color;ctx.shadowBlur=18;ctx.strokeStyle=color;ctx.lineWidth=2;
+    ctx.beginPath();ctx.arc(hx,hy-38,18,0,Math.PI*2);ctx.stroke();
+    ctx.beginPath();ctx.arc(hx,hy-38,18, -Math.PI/2, -Math.PI/2+Math.PI*2*quality);ctx.strokeStyle="#fff";ctx.lineWidth=3;ctx.stroke();
     ctx.font="800 18px Inter,system-ui,sans-serif";
-    const label=`ID ${t.id}`;
-    const w=ctx.measureText(label).width+18;
-    ctx.fillStyle="rgba(4,8,13,.80)";
-    ctx.fillRect(hx-w/2,hy-67,w,25);
-    ctx.fillStyle="#fff";ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(label,hx,hy-54);
+    const label=`ID ${t.id}  ·  ${Math.round(quality*100)}%`; const w=ctx.measureText(label).width+18;
+    ctx.fillStyle="rgba(4,8,13,.84)";ctx.fillRect(hx-w/2,hy-70,w,25);
+    ctx.fillStyle="#fff";ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(label,hx,hy-57);
     ctx.restore();
   }
 
@@ -401,7 +464,7 @@ function updateCards(list){
       el.innerHTML=`
         <div class="person-head">
           <div class="id">ID ${t.id}</div>
-          <div class="action">${t.action} · ${t.confidence ?? 0}%</div>
+          <div class="action">${t.action} · ${t.confidence ?? 0}% · TRACK ${Math.round((t.quality??0)*100)}%</div>
         </div>
         <div class="meta">POSE CONFIDENCE · ${t.confidence ?? 0}%</div>
         <div style="height:3px;margin-top:5px;border-radius:4px;background:rgba(255,255,255,.08);overflow:hidden">
