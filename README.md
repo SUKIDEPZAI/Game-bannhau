@@ -1,22 +1,6 @@
-# AI Hand & Head Skeleton — bản chạy trên Render
-
-Cấu trúc repo GitHub (không cần làm gì thêm):
-```
-server.js  package.json  render.yaml
-public/    ← index.html, css/, js/ (app)
-```
-
-## Deploy lên Render (Free)
-1. Push cả thư mục này lên GitHub.
-2. Render → **New → Blueprint** (đọc `render.yaml`) hoặc **New → Web Service**: Build `npm install`, Start `node server.js`, Plan **Free**.
-3. Mở URL `https://<tên>.onrender.com` (HTTPS nên camera hoạt động).
-
-## Server làm gì
-- Phục vụ WASM + thư viện MediaPipe từ chính domain (`/vendor`), model `.task` cache trên server (`/models`) → tải nhanh, nén Brotli/gzip, cache 1 năm.
-- `/healthz` để Render kiểm tra sống.
-- **Keep-alive:** mỗi 60 giây server tự gọi `RENDER_EXTERNAL_URL/healthz` (đổi bằng `KEEPALIVE_MS`, hoặc đặt `KEEPALIVE_URL` nếu dùng domain riêng).
-
-## Lưu ý
-- AI chạy ngay trên máy người dùng (không gửi video lên Render) nên độ trễ skeleton do thiết bị quyết định; server chỉ giúp tải/khởi động nhanh hơn.
-- Tự ping không đánh thức được service đang ngủ. Nên thêm 1 dịch vụ ngoài (UptimeRobot/cron-job.org) gọi `/healthz` mỗi 5 phút làm dự phòng.
-- Free plan có 750 giờ/tháng — đủ cho 1 service chạy 24/7.
+# Frontend — GitHub Pages
+1. Mở `js/config.js`, đổi `RENDER_URL` thành URL Render của bạn (vd `https://skeleton-api.onrender.com`).
+2. Upload toàn bộ thư mục (`index.html`, `css/`, `js/`, `.nojekyll`) vào gốc repo → Settings → Pages → `main` + `/ (root)`.
+- Trang tự dùng thư viện + model từ Render nếu Render đang thức (nhanh, có cache); nếu Render ngủ thì dùng CDN ngay, không bị chờ.
+- Ô **PING** trên HUD là thời gian phản hồi tới Render, cập nhật mỗi 60 giây (cũng giữ Render thức khi trang đang mở).
+Phím: `V` phong cách · `H` tay · `E` đầu · `S` chụp · `C` camera · `F` fullscreen.
