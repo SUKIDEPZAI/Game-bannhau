@@ -1,4 +1,4 @@
-// Backend phụ trợ cho frontend trên GitHub Pages: /ping (đo RTT), /vendor + /models (CORS, nén, cache), keep-alive mỗi 60s.
+// Server tất-cả-trong-một: phục vụ giao diện (public/) + /ping + /vendor + /models (CORS, nén, cache) + keep-alive 60s.
 import express from "express";
 import compression from "compression";
 import fs from "node:fs";
@@ -35,7 +35,7 @@ app.get("/models/:f", async (req, res) => {
     res.set("Cache-Control", "public,max-age=31536000,immutable").type("application/octet-stream").sendFile(file);
   } catch (e) { console.error("model lỗi", e.message); res.status(502).send("model fetch failed"); }
 });
-app.get("/", (_q, r) => r.type("text").send("Skeleton helper API: /ping /vendor /models"));
+app.use(express.static(path.join(dir, "public"), { maxAge: "5m" }));   // chạy luôn cả giao diện khi deploy trên Render
 app.listen(PORT, () => console.log(`Chạy ở cổng ${PORT}`));
 
 // Keep-alive: tự gọi URL công khai mỗi 60s (đổi bằng KEEPALIVE_MS).
