@@ -1,28 +1,32 @@
-# AI Pose Tracking — Skeleton v2 Pro
+# AI Pose Tracking — Skeleton v4 Pro
 
-GitHub Pages-ready single-page AI body tracking camera.
+Camera AI nhận diện khung xương, chạy 100% trên trình duyệt (MediaPipe), sẵn sàng cho GitHub Pages.
 
-## Skeleton v2 Pro
-- Full MediaPipe 33-point pose graph
-- Neon layered bones: glow + crisp core
-- Confidence-aware joints and bones
-- Depth-aware joint sizing using landmark Z
-- Per-person stable tracking ID
-- Motion trails for wrists and knees
-- Temporal pose ghosting for fast movement
-- Head tracking reticle + live tracking quality
-- Realtime elbow and knee angles
-- Smoothed action recognition
-- Radar/HUD telemetry
-- Full-screen responsive camera for PC and mobile
-- Front/rear camera switch
-- Runs client-side in the browser
+## Cấu trúc (theo mô hình module của FormFlow / FormAI / FormCheck)
+```
+index.html
+css/style.css
+js/main.js          vòng lặp, camera, phím tắt
+js/poseEngine.js    tải MediaPipe, GPU→CPU, Lite/Full
+js/smoothing.js     One Euro filter cho 33 landmark
+js/tracker.js       ID ổn định nhiều người
+js/analyzer.js      góc khớp, nhận diện động tác, đếm rep
+js/repCounter.js    phase state machine có hysteresis
+js/formChecker.js   luật phản hồi form
+js/renderer.js      vẽ neon (Path2D gộp, không shadowBlur)
+js/ui.js            HUD, cập nhật DOM tối thiểu
+js/angleUtils.js    hình học + chỉ số landmark
+```
 
-## GitHub Pages
-1. Upload `index.html` and `README.md` to the repository root.
-2. GitHub → Settings → Pages.
-3. Source: Deploy from a branch.
-4. Select `main` + `/ (root)`.
-5. Open the generated Pages URL over HTTPS.
+## Tối ưu độ mượt
+- `requestVideoFrameCallback`: suy luận đúng lúc có khung hình mới, không poll
+- Bỏ `shadowBlur`; glow là 3 lớp nét mờ, mỗi lớp 1 `Path2D` cho cả bộ xương
+- Tái sử dụng object landmark (không tạo rác mỗi frame), thẻ HUD chỉ cập nhật 4 lần/giây
+- Tạm dừng khi tab bị ẩn; canvas `desynchronized`
 
-Camera access requires a secure context such as GitHub Pages HTTPS or localhost.
+## Phím tắt
+`F` fullscreen · `C` đổi camera · `S` chụp ảnh · `R` reset rep · `M` đổi model Lite/Full
+
+## Chạy
+Cần HTTPS hoặc localhost (ES modules + camera). Cục bộ: `python3 -m http.server` rồi mở http://localhost:8000.
+GitHub Pages: upload toàn bộ thư mục → Settings → Pages → `main` + `/ (root)`.
