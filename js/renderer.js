@@ -16,7 +16,8 @@ export class Renderer {
     g.globalAlpha = alpha * .95; g.lineWidth = w * .75; g.strokeStyle = "#fff"; g.stroke(path);
   }
 
-  hand(s, conn, label, color) {
+  hand(s, conn, label, dt = .016) {
+    this.trail(s);
     if (s.alpha < .02) return;
     const g = this.g, W = this.c.width, H = this.c.height, d = s.d;
     const px = (i) => d[i * 2] * W, py = (i) => d[i * 2 + 1] * H;
@@ -34,7 +35,26 @@ export class Renderer {
       g.beginPath(); g.arc(px(i), py(i), r, 0, 6.2832); g.fill();
       if (tip) { g.fillStyle = "#fff"; g.beginPath(); g.arc(px(i), py(i), r * .45, 0, 6.2832); g.fill(); }
     }
-    this.tag(label, px(12), Math.min(py(8), py(12), py(16)) - size * .35, color || "#fff", s.alpha, size);
+    this.drawTrail(s, size);
+    this.tag(label, px(12), Math.min(py(8), py(12), py(16)) - size * .35, "#fff", s.alpha, size);
+  }
+
+  // Vệt sáng 5 đầu ngón: lưu vị trí đã làm mượt mỗi frame màn hình, mờ dần theo thời gian.
+  trail(s) {
+    const t = (s.trail ??= []);
+    if (s.alpha > .3) { t.push(TIPS.map((i) => [s.d[i * 2], s.d[i * 2 + 1]])); if (t.length > 12) t.shift(); } else if (t.length) t.shift();
+  }
+  drawTrail(s, size) {
+    const t = s.trail, g = this.g, W = this.c.width, H = this.c.height; if (!t || t.length < 2) return;
+    g.lineCap = "round";
+    for (let k = 0; k < 5; k++) {
+      for (let i = 1; i < t.length; i++) {
+        const f = i / t.length;
+        g.globalAlpha = f * f * .55 * s.alpha; g.strokeStyle = FINGER[k]; g.lineWidth = Math.max(1, size * .05 * f);
+        g.beginPath(); g.moveTo(t[i - 1][k][0] * W, t[i - 1][k][1] * H); g.lineTo(t[i][k][0] * W, t[i][k][1] * H); g.stroke();
+      }
+    }
+    g.globalAlpha = 1;
   }
 
   head(s, conn) {
@@ -46,6 +66,9 @@ export class Renderer {
     g.lineCap = g.lineJoin = "round";
     const size = (y1 - y0) * H, w = Math.max(1.6, size * .008);
     this.layers(p, HEAD, w, s.alpha);
+    const dots = new Path2D(), seen = new Set();
+    for (const { start: a } of conn) { if (seen.has(a)) continue; seen.add(a); dots.moveTo(d[a * 2] * W + w * 1.4, d[a * 2 + 1] * H); dots.arc(d[a * 2] * W, d[a * 2 + 1] * H, w * 1.4, 0, 6.2832); }
+    g.globalAlpha = s.alpha * .85; g.fillStyle = "#fff"; g.fill(dots);
     // Khung ngắm 4 góc quanh đầu
     const m = size * .08, L = size * .12, X0 = x0 * W - m, Y0 = y0 * H - m, X1 = x1 * W + m, Y1 = y1 * H + m;
     const br = new Path2D();

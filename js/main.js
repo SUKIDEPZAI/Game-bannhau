@@ -6,19 +6,22 @@ import { Renderer } from "./renderer.js";
 const $ = (id) => document.getElementById(id);
 const video = $("video"), canvas = $("overlay"), stage = $("stage");
 const engine = new Engine(), rend = new Renderer(canvas);
-const slots = [0, 1].map(() => ({ set: new SmoothSet(21), label: "", color: "" }));
-const face = new SmoothSet(478, { minCutoff: 1.1, beta: 10, tau: 0.035 });
-let stream = null, running = false, facing = "user", frameNo = 0, lastVT = -1, lastRaf = performance.now();
-let show = { hands: true, head: true }, fps = 0, frames = 0, fpsT = performance.now(), infer = 0, hudT = 0;
+const slots = [0, 1].map(() => ({ set: new SmoothSet(21), label: "" }));
+const face = new SmoothSet(478, { minCutoff: 1.1, beta: 10, tau: 0.03 });
+let stream = null, running = false, facing = "user", frameNo = 0, lastVT = -1, lastRaf = 0;
+let show = { hands: true, head: true }, frames = 0, fpsT = performance.now(), infer = 0, hudT = 0, rawHands = 0, rawFace = 0, noDet = 0, useRVFC = false;
 
-const showError = (m) => { const e = $("error"); e.textContent = m; e.classList.remove("hidden"); clearTimeout(showError.t); showError.t = setTimeout(() => e.classList.add("hidden"), 6000); };
+const showError = (m, ms = 7000) => { const e = $("error"); e.textContent = m; e.classList.remove("hidden"); clearTimeout(showError.t); if (ms) showError.t = setTimeout(() => e.classList.add("hidden"), ms); };
+addEventListener("error", (e) => showError("Lỗi: " + e.message));
+addEventListener("unhandledrejection", (e) => showError("Lỗi: " + (e.reason?.message || e.reason)));
 const setBtn = (on) => { $("startBtn").classList.toggle("hidden", on); $("stopBtn").classList.toggle("hidden", !on); };
 
 async function ensureModel() {
   if (engine.ready) return true;
-  $("modelState").textContent = "LOAD";
-  try { await engine.load(); $("modelState").textContent = engine.delegate; return true; }
-  catch (e) { console.error(e); $("modelState").textContent = "ERR"; showError("Không tải được mô hình AI. Kiểm tra mạng rồi thử lại."); return false; }
+  try {
+    await engine.load((s) => { $("modelState").textContent = "LOAD"; showError(s, 0); });
+    $("modelState").textContent = `${engine.delegate.hand}/${engine.delegate.face}`; $("error").classList.add("hidden"); return true;
+  } catch (e) { console.error(e); $("modelState").textContent = "ERR"; showError("Không tải được mô hình AI: " + (e.message || e) + ". Kiểm tra mạng / mở qua HTTPS hoặc localhost."); return false; }
 }
 
 async function startCamera() {
@@ -27,67 +30,69 @@ async function startCamera() {
     stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: facing }, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30, max: 60 } } });
     video.srcObject = stream; await video.play();
     rend.mirrored = facing === "user"; stage.classList.toggle("mirror", rend.mirrored);
-    $("welcome").classList.add("hidden"); setBtn(true);
-    if (!running) { running = true; lastRaf = performance.now(); requestAnimationFrame(loop); }
+    $("welcome").classList.add("hidden"); setBtn(true); noDet = 0;
+    if (!running) {
+      running = true; lastRaf = performance.now(); requestAnimationFrame(loop);
+      if ("requestVideoFrameCallback" in video) { useRVFC = true; const cb = () => { if (!running) return; runAI(performance.now()); video.requestVideoFrameCallback(cb); }; video.requestVideoFrameCallback(cb); }
+    }
   } catch (e) {
     console.error(e); setBtn(false);
-    showError("Không mở được camera." + (isSecureContext ? "" : " Cần HTTPS hoặc localhost."));
+    showError("Không mở được camera." + (isSecureContext ? " Hãy cấp quyền camera." : " Cần HTTPS hoặc localhost."));
   }
 }
-function stopCamera() {
-  running = false; stream?.getTracks().forEach((t) => t.stop()); stream = null;
-  rend.clear(); setBtn(false); $("welcome").classList.remove("hidden");
-}
+function stopCamera() { running = false; stream?.getTracks().forEach((t) => t.stop()); stream = null; rend.clear(); setBtn(false); $("welcome").classList.remove("hidden"); }
 
-// Gán bàn tay phát hiện được vào 2 slot cố định (gần nhất theo cổ tay) → bộ lọc không bị đổi chỗ.
+// Gán tay vào 2 slot cố định theo vị trí cổ tay → bộ lọc không bị hoán đổi.
 function assignHands(dets, now) {
-  const used = new Set();
+  const used = new Set(), aspect = video.videoWidth / video.videoHeight || 1;
   for (const lm of dets) {
     let best = -1, bd = Infinity;
     slots.forEach((s, i) => {
       if (used.has(i)) return;
-      const dd = s.set.has && s.set.miss < 8 ? Math.hypot(lm[0].x - s.set.x[0], lm[0].y - s.set.x[1]) : 0.5;
+      const live = s.set.has && s.set.miss < 8, dd = live ? Math.hypot(lm[0].x - s.set.x[0], lm[0].y - s.set.x[1]) : 0.5;
       if (dd < bd) { bd = dd; best = i; }
     });
     if (best < 0) continue;
     const s = slots[best]; used.add(best);
     if (s.set.miss >= 8) s.set.reset();
-    s.set.push(lm, now);
-    s.label = gesture(s.set, video.videoWidth / video.videoHeight);
+    s.set.push(lm, now); s.label = gesture(s.set, aspect);
   }
   slots.forEach((s, i) => { if (!used.has(i)) s.set.miss++; });
+}
+
+function runAI(now) {                                     // chạy ngay khi có khung camera mới
+  if (document.hidden || !engine.ready || video.readyState < 2 || video.currentTime === lastVT) return;
+  lastVT = video.currentTime; frameNo++;
+  rend.resize(video.videoWidth, video.videoHeight);
+  const t0 = performance.now();
+  if (show.hands) { const d = engine.detectHands(video, now); rawHands = d.length; assignHands(d, now); }
+  if (show.head && frameNo % 2 === 0) {
+    const f = engine.detectFace(video, now); rawFace = f ? 1 : 0;
+    if (f) { if (face.miss >= 8) face.reset(); face.push(f, now); } else face.miss++;
+  }
+  infer += (performance.now() - t0 - infer) * .15; frames++;
+  noDet = rawHands || rawFace ? 0 : noDet + 1;
 }
 
 function loop(now) {
   if (!running) return;
   requestAnimationFrame(loop);
   const dt = Math.min(.1, (now - lastRaf) / 1000); lastRaf = now;
-  if (!document.hidden && engine.ready && video.readyState >= 2) {
-    rend.resize(video.videoWidth, video.videoHeight);
-    if (video.currentTime !== lastVT) {                       // chỉ chạy AI khi có khung camera mới
-      lastVT = video.currentTime; frameNo++;
-      const t0 = performance.now();
-      if (show.hands) assignHands(engine.detectHands(video, now), now);
-      if (show.head && frameNo % 2 === 0) {                  // đầu di chuyển chậm hơn tay → chạy xen kẽ, nội suy bù
-        const f = engine.detectFace(video, now);
-        if (f) { if (face.miss >= 8) face.reset(); face.push(f, now); } else face.miss++;
-      }
-      infer += (performance.now() - t0 - infer) * .15; frames++;
-    }
-  }
+  if (!useRVFC) runAI(now);
   rend.clear();
-  const aspect = video.videoWidth / video.videoHeight || 1;
   let hands = 0;
   for (const s of slots) {
     const vis = show.hands && s.set.has && s.set.miss < 5; if (vis) hands++;
-    s.set.step(dt, vis); rend.hand(s.set, engine.handConn || [], s.label);
+    s.set.step(dt, vis); rend.hand(s.set, engine.handConn || [], s.label, dt);
   }
-  face.step(dt, show.head && face.has && face.miss < 6); if (engine.ready) rend.head(face, engine.faceConn);
+  face.step(dt, show.head && face.has && face.miss < 6);
+  if (engine.ready) rend.head(face, engine.faceConn);
   if (now - hudT > 250) {
-    fps = Math.round(frames * 1000 / (now - fpsT)); frames = 0; fpsT = now; hudT = now;
-    $("fps").textContent = fps; $("lat").textContent = Math.round(infer) + "ms"; $("hands").textContent = hands;
+    $("fps").textContent = Math.round(frames * 1000 / (now - fpsT)); frames = 0; fpsT = now; hudT = now;
+    $("lat").textContent = Math.round(infer) + "ms"; $("hands").textContent = hands;
     $("head").textContent = face.alpha > .5 ? "ON" : "—";
     $("gest").textContent = slots.filter((s) => s.set.alpha > .5).map((s) => s.label).join(" · ") || "—";
+    if (noDet > 90) showError("AI đang chạy nhưng chưa thấy tay/đầu — đưa tay vào khung hình và đảm bảo đủ sáng.", 3000);
   }
 }
 
