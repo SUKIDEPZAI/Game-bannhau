@@ -1,1 +1,57 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#05070a">
+<title>AI Pose Camera — Hand &amp; Head Skeleton v5</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="stage" class="mirror">
+  <video id="video" autoplay playsinline muted></video>
+  <canvas id="overlay"></canvas>
+  <div class="shade"></div>
 
+  <div class="top">
+    <div class="brand glass">HAND <span>·</span> HEAD v5</div>
+    <div class="row-btn">
+      <button id="snapBtn" title="Chụp ảnh (S)">📸</button>
+      <button id="handBtn" title="Bật/tắt skeleton tay (H)">✋</button>
+      <button id="styleBtn" title="Đổi phong cách skeleton (V)">🎨</button>
+      <button id="headBtn" title="Bật/tắt skeleton đầu (E)">🙂</button>
+      <button id="switchBtn" title="Đổi camera (C)">↔</button>
+      <button id="fullBtn" title="Toàn màn hình (F)">⛶</button>
+    </div>
+  </div>
+
+  <div class="bottom">
+    <div class="pills">
+      <div class="pill glass">FPS <b id="fps">0</b></div>
+      <div class="pill glass">AI <b id="lat">--</b></div>
+      <div class="pill glass">✋ <b id="hands">0</b></div>
+      <div class="pill glass">🙂 <b id="head">—</b></div>
+      <div class="pill glass">⚡ <b id="gest">—</b></div>
+      <div class="pill glass">🎨 <b id="style">NEON</b></div>
+      <div class="pill glass">BÙ TRỄ <b id="lead">--</b></div>
+      <div class="pill glass">MODEL <b id="modelState">OFF</b></div>
+    </div>
+    <div class="row-btn">
+      <button id="startBtn" class="primary">📷 Bật camera</button>
+      <button id="stopBtn" class="danger hidden">■ Dừng</button>
+    </div>
+  </div>
+
+  <div id="welcome" class="center">
+    <div class="dialog">
+      <h1>AI Pose Camera</h1>
+      <p>Skeleton neon 21 điểm cho từng ngón tay và đường viền đầu/mặt, nhận diện cử chỉ theo thời gian thực.</p>
+      <div class="btns"><button id="startMain" class="primary">📷 Bắt đầu</button><button id="fullMain">⛶ Fullscreen</button></div>
+      <p style="margin:12px 0 0;font-size:11px">Video xử lý hoàn toàn trên thiết bị bằng MediaPipe, không gửi lên server.</p>
+    </div>
+  </div>
+  <div id="error" class="error glass hidden"></div>
+</div>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
