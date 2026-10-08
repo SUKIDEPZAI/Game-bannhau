@@ -34,3 +34,5 @@ button:hover{background:rgba(255,255,255,.1)}button:active{transform:scale(.96)}
 .error{position:absolute;left:50%;bottom:88px;transform:translateX(-50%);z-index:9;padding:10px 14px;border-radius:12px;max-width:calc(100vw - 30px);font-size:12px;color:#ffdbe1}
 .hidden{display:none!important}
 @media(max-width:600px){#cards{width:calc(100vw - 20px);bottom:90px}.card:nth-child(n+3){display:none}button{padding:8px 9px;min-height:38px}}
+button.off{opacity:.45}
+.pill b{max-width:42vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:inline-block;vertical-align:bottom}
