@@ -1,29 +1,27 @@
-// One Euro filter (Casiez 2012): ít rung khi đứng yên, ít trễ khi chuyển động nhanh.
-const alpha = (c, dt) => 1 / (1 + 1 / (2 * Math.PI * c) / dt);
+// 2 tầng làm mượt: (1) One Euro filter chống rung theo từng toạ độ,
+// (2) nội suy mũ ở tốc độ màn hình (60Hz+) → skeleton trượt mượt kể cả khi AI chỉ chạy ~30Hz.
+const a = (c, dt) => 1 / (1 + 1 / (6.2832 * c) / dt);
 
-export class OneEuro {
-  constructor(minCutoff = 1.4, beta = 14, dCutoff = 1) { Object.assign(this, { minCutoff, beta, dCutoff, x: null, dx: 0, t: 0 }); }
-  filter(v, t) {
-    if (this.x === null) { this.x = v; this.t = t; return v; }
-    const dt = Math.max(1e-3, (t - this.t) / 1000); this.t = t;
-    this.dx += alpha(this.dCutoff, dt) * ((v - this.x) / dt - this.dx);
-    this.x += alpha(this.minCutoff + this.beta * Math.abs(this.dx), dt) * (v - this.x);
-    return this.x;
+export class SmoothSet {
+  constructor(n, { minCutoff = 1.6, beta = 18, tau = 0.028 } = {}) {
+    Object.assign(this, { n, mc: minCutoff, b: beta, tau, has: false, last: 0, alpha: 0, miss: 99 });
+    this.x = new Float32Array(n * 2); this.v = new Float32Array(n * 2); this.d = new Float32Array(n * 2);
   }
-}
-
-export class LandmarkSmoother {
-  constructor() { this.f = null; this.out = null; }
-  apply(lm, t) {
-    if (!this.f) {
-      this.f = lm.map(() => [new OneEuro(), new OneEuro(), new OneEuro()]);
-      this.out = lm.map(() => ({ x: 0, y: 0, z: 0, visibility: 1 }));
+  reset() { this.has = false; }
+  push(lm, ts) {
+    const dt = Math.max(1e-3, (ts - this.last) / 1000); this.last = ts;
+    const ad = a(1, dt);
+    for (let i = 0; i < this.n; i++) for (let k = 0; k < 2; k++) {
+      const j = i * 2 + k, val = k ? lm[i].y : lm[i].x;
+      if (!this.has) { this.x[j] = this.d[j] = val; this.v[j] = 0; continue; }
+      this.v[j] += ad * ((val - this.x[j]) / dt - this.v[j]);
+      this.x[j] += a(this.mc + this.b * Math.abs(this.v[j]), dt) * (val - this.x[j]);
     }
-    for (let i = 0; i < lm.length; i++) {            // tái sử dụng object → không tạo rác mỗi frame
-      const p = lm[i], f = this.f[i], o = this.out[i];
-      o.x = f[0].filter(p.x, t); o.y = f[1].filter(p.y, t); o.z = f[2].filter(p.z || 0, t);
-      o.visibility = p.visibility;
-    }
-    return this.out;
+    this.has = true; this.miss = 0;
+  }
+  step(dt, visible) {                                  // gọi mỗi frame màn hình
+    const k = 1 - Math.exp(-dt / this.tau);
+    for (let j = 0; j < this.d.length; j++) this.d[j] += (this.x[j] - this.d[j]) * k;
+    this.alpha += ((visible ? 1 : 0) - this.alpha) * (1 - Math.exp(-dt / 0.09));   // fade vào/ra
   }
 }

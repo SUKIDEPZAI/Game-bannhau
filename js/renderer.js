@@ -1,58 +1,70 @@
-// Vẽ skeleton neon. Tối ưu: không dùng shadowBlur (rất tốn GPU) — glow = nhiều lớp nét mờ,
-// mỗi lớp là 1 Path2D gộp toàn bộ xương → chỉ vài lệnh stroke mỗi người mỗi frame.
-import { BONES, ok, L } from "./angleUtils.js";
-export const COLORS = ["#00f5a0", "#45a3ff", "#ffdc3a", "#ff4fa3", "#b96cff", "#ff7b52", "#72f2ff", "#d4ff59"];
+// Chỉ vẽ skeleton bàn tay + đầu. Không shadowBlur: glow = 3 lớp nét, mỗi nhóm 1 Path2D.
+const FINGER = ["#ff4fa3", "#ffdc3a", "#00f5a0", "#45a3ff", "#b96cff", "#e8f4ff"];   // cái, trỏ, giữa, nhẫn, út, lòng bàn tay
+const TIPS = [4, 8, 12, 16, 20], PALM = new Set([0, 5, 9, 13, 17]);
+const HEAD = "#72f2ff";
 
 export class Renderer {
-  constructor(canvas) { this.c = canvas; this.g = canvas.getContext("2d", { desynchronized: true }); this.mirrored = true; }
+  mirrored = true;
+  constructor(canvas) { this.c = canvas; this.g = canvas.getContext("2d", { desynchronized: true }); }
   resize(w, h) { if (this.c.width !== w || this.c.height !== h) { this.c.width = w; this.c.height = h; } }
   clear() { this.g.clearRect(0, 0, this.c.width, this.c.height); }
 
-  draw(t, now) {
-    const g = this.g, W = this.c.width, H = this.c.height, u = W / 900, m = t.lm;
-    const col = t.warnUntil > now ? "#ffb020" : COLORS[(t.id - 1) % COLORS.length];
+  layers(path, col, w, alpha) {
+    const g = this.g; g.strokeStyle = col;
+    g.globalAlpha = alpha * .14; g.lineWidth = w * 4.2; g.stroke(path);
+    g.globalAlpha = alpha * .4;  g.lineWidth = w * 2;   g.stroke(path);
+    g.globalAlpha = alpha * .95; g.lineWidth = w * .75; g.strokeStyle = "#fff"; g.stroke(path);
+  }
+
+  hand(s, conn, label, color) {
+    if (s.alpha < .02) return;
+    const g = this.g, W = this.c.width, H = this.c.height, d = s.d;
+    const px = (i) => d[i * 2] * W, py = (i) => d[i * 2 + 1] * H;
+    const size = Math.hypot(px(0) - px(9), py(0) - py(9)), w = Math.max(2, size * .035);
     g.lineCap = g.lineJoin = "round";
-
-    // Vệt chuyển động hai cổ tay
-    const tr = t.trail;
-    if (tr.length > 1) {
-      const p = new Path2D();
-      for (const k of [0, 2]) { p.moveTo(tr[0][k] * W, tr[0][k + 1] * H); for (const q of tr) p.lineTo(q[k] * W, q[k + 1] * H); }
-      g.globalAlpha = .3; g.strokeStyle = col; g.lineWidth = 5 * u; g.stroke(p);
+    const paths = FINGER.map(() => new Path2D());
+    for (const { start: a, end: b } of conn) {
+      const grp = PALM.has(a) && PALM.has(b) ? 5 : Math.floor((Math.max(a, b) - 1) / 4);
+      paths[grp].moveTo(px(a), py(a)); paths[grp].lineTo(px(b), py(b));
     }
-
-    const bones = new Path2D();
-    for (const [a, b] of BONES) {
-      if (!ok(m[a]) || !ok(m[b])) continue;
-      bones.moveTo(m[a].x * W, m[a].y * H); bones.lineTo(m[b].x * W, m[b].y * H);
+    paths.forEach((p, i) => this.layers(p, FINGER[i], w, s.alpha));
+    for (let i = 0; i < 21; i++) {
+      const tip = TIPS.includes(i), r = size * (tip ? .045 : .028);
+      g.globalAlpha = s.alpha; g.fillStyle = tip ? FINGER[TIPS.indexOf(i)] : "#fff";
+      g.beginPath(); g.arc(px(i), py(i), r, 0, 6.2832); g.fill();
+      if (tip) { g.fillStyle = "#fff"; g.beginPath(); g.arc(px(i), py(i), r * .45, 0, 6.2832); g.fill(); }
     }
-    g.strokeStyle = col;
-    g.globalAlpha = .14; g.lineWidth = 16 * u; g.stroke(bones);   // glow ngoài
-    g.globalAlpha = .38; g.lineWidth = 7 * u;  g.stroke(bones);   // glow trong
-    g.globalAlpha = .95; g.lineWidth = 2.4 * u; g.strokeStyle = "#fff"; g.stroke(bones); // lõi
+    this.tag(label, px(12), Math.min(py(8), py(12), py(16)) - size * .35, color || "#fff", s.alpha, size);
+  }
 
-    const dots = new Path2D(), cores = new Path2D();
-    for (let i = 0; i < m.length; i++) {
-      const p = m[i]; if (!ok(p)) continue;
-      const r = (3.2 + (i > 10 ? 1.6 : 0)) * u * clampZ(p.z);
-      dots.moveTo(p.x * W + r, p.y * H); dots.arc(p.x * W, p.y * H, r, 0, 6.2832);
-      cores.moveTo(p.x * W + r * .45, p.y * H); cores.arc(p.x * W, p.y * H, r * .45, 0, 6.2832);
+  head(s, conn) {
+    if (s.alpha < .02) return;
+    const g = this.g, W = this.c.width, H = this.c.height, d = s.d;
+    const p = new Path2D(); let x0 = 1, y0 = 1, x1 = 0, y1 = 0;
+    for (let i = 0; i < 478; i++) { const x = d[i * 2], y = d[i * 2 + 1]; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    for (const { start: a, end: b } of conn) { p.moveTo(d[a * 2] * W, d[a * 2 + 1] * H); p.lineTo(d[b * 2] * W, d[b * 2 + 1] * H); }
+    g.lineCap = g.lineJoin = "round";
+    const size = (y1 - y0) * H, w = Math.max(1.6, size * .008);
+    this.layers(p, HEAD, w, s.alpha);
+    // Khung ngắm 4 góc quanh đầu
+    const m = size * .08, L = size * .12, X0 = x0 * W - m, Y0 = y0 * H - m, X1 = x1 * W + m, Y1 = y1 * H + m;
+    const br = new Path2D();
+    for (const [x, y, sx, sy] of [[X0, Y0, 1, 1], [X1, Y0, -1, 1], [X0, Y1, 1, -1], [X1, Y1, -1, -1]]) {
+      br.moveTo(x + sx * L, y); br.lineTo(x, y); br.lineTo(x, y + sy * L);
     }
-    g.globalAlpha = .9; g.fillStyle = col; g.fill(dots);
-    g.globalAlpha = 1; g.fillStyle = "#fff"; g.fill(cores);
-
-    // Nhãn (đảo ngược chữ khi canvas bị lật gương)
-    const head = ok(m[L.nose]) ? m[L.nose] : m[L.ls];
-    const label = `ID ${t.id} · ${t.action} · ${total(t)} rep`;
-    g.font = `800 ${Math.max(13, 17 * u)}px Inter,system-ui,sans-serif`;
-    g.textAlign = "center"; g.textBaseline = "middle";
-    const w = g.measureText(label).width + 18 * u, hh = 26 * u, x = head.x * W, y = head.y * H - 54 * u;
-    g.save(); g.translate(x, y); if (this.mirrored) g.scale(-1, 1);
-    g.fillStyle = "rgba(4,8,13,.82)"; g.beginPath(); g.roundRect(-w / 2, -hh / 2, w, hh, 8 * u); g.fill();
-    g.strokeStyle = col; g.lineWidth = 1.5 * u; g.globalAlpha = .8; g.stroke();
-    g.globalAlpha = 1; g.fillStyle = "#fff"; g.fillText(label, 0, 1); g.restore();
+    g.globalAlpha = s.alpha * .9; g.strokeStyle = HEAD; g.lineWidth = w * 1.6; g.stroke(br);
+    this.tag("HEAD", (X0 + X1) / 2, Y0 - size * .07, HEAD, s.alpha, size * .6);
     g.globalAlpha = 1;
   }
+
+  tag(text, x, y, col, alpha, size) {
+    if (!text) return;
+    const g = this.g, f = Math.max(12, Math.min(20, size * .11));
+    g.font = `800 ${f}px Inter,system-ui,sans-serif`; g.textAlign = "center"; g.textBaseline = "middle";
+    const w = g.measureText(text).width + f * 1.1, h = f * 1.7;
+    g.save(); g.translate(x, y); if (this.mirrored) g.scale(-1, 1);
+    g.globalAlpha = alpha; g.fillStyle = "rgba(4,8,13,.82)"; g.beginPath(); g.roundRect(-w / 2, -h / 2, w, h, h / 3); g.fill();
+    g.strokeStyle = col; g.lineWidth = 1.3; g.globalAlpha = alpha * .8; g.stroke();
+    g.globalAlpha = alpha; g.fillStyle = "#fff"; g.fillText(text, 0, 1); g.restore();
+  }
 }
-const clampZ = (z = 0) => Math.max(.75, Math.min(1.3, 1 - z * .5));
-export const total = (t) => t.reps.squat.count + t.reps.push.count + t.reps.raise.count;
