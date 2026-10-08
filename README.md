@@ -20,4 +20,9 @@ Tự ping không đánh thức service đang ngủ → thêm UptimeRobot/cron-jo
 
 ## Bù trễ
 Vị trí vẽ = vị trí lọc + vận tốc × (độ trễ camera đo thật từ `requestVideoFrameCallback` + thời gian AI + 1 frame).
-Phím: `V` phong cách · `H` tay · `E` đầu · `S` chụp · `C` camera · `F` fullscreen.
+
+
+## v12 — pipeline độ trễ thấp
+Camera → rVFC (latest-frame-wins) → ImageBitmap → **classic Worker** (MediaPipe) → Float32Array → filter+predict → rAF → Canvas 2D.
+Phím: `P` profile (ULTRA/BALANCED/QUALITY) · `T` bật/tắt telemetry · `V` phong cách · `H` tay · `E` đầu · `S` chụp · `C` camera · `F` fullscreen.
+Phân tích chi tiết: `LATENCY_ANALYSIS.md`.

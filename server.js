@@ -18,7 +18,7 @@ app.use((_q, res, next) => {            // cho phép trang GitHub Pages tải t�
 const alive = (_q, r) => r.set("Cache-Control", "no-store").json({ ok: true, uptime: Math.round(process.uptime()), t: Date.now() });
 app.get("/ping", alive); app.get("/healthz", alive);
 
-app.use("/vendor", express.static(path.join(dir, "node_modules/@mediapipe/tasks-vision"), { maxAge: "365d", immutable: true }));
+app.use("/vendor", express.static(path.join(dir, "node_modules/@mediapipe/tasks-vision"), { maxAge: "365d", immutable: true, setHeaders: (res, p) => { if (p.endsWith(".cjs")) res.type("application/javascript"); } }));   // importScripts cần MIME JS
 
 const GS = "https://storage.googleapis.com/mediapipe-models";
 const MODELS = {
