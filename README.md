@@ -1,32 +1,21 @@
-# AI Pose Tracking — Skeleton v4 Pro
+# AI Hand & Head Skeleton v5
 
-Camera AI nhận diện khung xương, chạy 100% trên trình duyệt (MediaPipe), sẵn sàng cho GitHub Pages.
+Chỉ vẽ skeleton **bàn tay (21 điểm/tay, 2 tay)** và **đầu (478 điểm, vẽ đường viền)**; chạy 100% trên trình duyệt.
 
-## Cấu trúc (theo mô hình module của FormFlow / FormAI / FormCheck)
 ```
-index.html
-css/style.css
-js/main.js          vòng lặp, camera, phím tắt
-js/poseEngine.js    tải MediaPipe, GPU→CPU, Lite/Full
-js/smoothing.js     One Euro filter cho 33 landmark
-js/tracker.js       ID ổn định nhiều người
-js/analyzer.js      góc khớp, nhận diện động tác, đếm rep
-js/repCounter.js    phase state machine có hysteresis
-js/formChecker.js   luật phản hồi form
-js/renderer.js      vẽ neon (Path2D gộp, không shadowBlur)
-js/ui.js            HUD, cập nhật DOM tối thiểu
-js/angleUtils.js    hình học + chỉ số landmark
+index.html · css/style.css
+js/main.js       vòng lặp (AI theo khung camera, vẽ theo tần số màn hình)
+js/engine.js     HandLandmarker + FaceLandmarker, GPU→CPU
+js/smoothing.js  One Euro filter + nội suy mũ 2 tầng
+js/gesture.js    Mở bàn tay / Nắm đấm / Like / Chỉ tay / Chữ V / OK / Pinch
+js/renderer.js   neon theo từng ngón, khung ngắm đầu
 ```
 
-## Tối ưu độ mượt
-- `requestVideoFrameCallback`: suy luận đúng lúc có khung hình mới, không poll
-- Bỏ `shadowBlur`; glow là 3 lớp nét mờ, mỗi lớp 1 `Path2D` cho cả bộ xương
-- Tái sử dụng object landmark (không tạo rác mỗi frame), thẻ HUD chỉ cập nhật 4 lần/giây
-- Tạm dừng khi tab bị ẩn; canvas `desynchronized`
+## Mượt hơn
+- Làm mượt 2 tầng: One Euro (chống rung) + nội suy ở 60Hz+ (trượt đều dù AI ~30Hz)
+- Gán tay vào 2 slot cố định theo vị trí cổ tay → bộ lọc không đổi chỗ khi hai tay gần nhau
+- Fade vào/ra khi mất/thấy lại; đầu chạy xen kẽ frame để giảm tải
+- Không shadowBlur; mỗi ngón 1 Path2D; độ dày nét tỉ lệ kích thước bàn tay
 
-## Phím tắt
-`F` fullscreen · `C` đổi camera · `S` chụp ảnh · `R` reset rep · `M` đổi model Lite/Full
-
-## Chạy
-Cần HTTPS hoặc localhost (ES modules + camera). Cục bộ: `python3 -m http.server` rồi mở http://localhost:8000.
-GitHub Pages: upload toàn bộ thư mục → Settings → Pages → `main` + `/ (root)`.
+Phím: `H` tay · `E` đầu · `S` chụp ảnh · `C` đổi camera · `F` fullscreen.
+Chạy qua HTTPS hoặc `python3 -m http.server` (localhost).

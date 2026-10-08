@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <meta name="theme-color" content="#05070a">
-<title>AI Pose Camera — Neon Skeleton v4</title>
+<title>AI Pose Camera — Hand &amp; Head Skeleton v5</title>
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -14,25 +14,23 @@
   <div class="shade"></div>
 
   <div class="top">
-    <div class="brand glass">POSE <span>NEON</span> v4</div>
+    <div class="brand glass">HAND <span>·</span> HEAD v5</div>
     <div class="row-btn">
       <button id="snapBtn" title="Chụp ảnh (S)">📸</button>
-      <button id="resetBtn" title="Reset rep (R)">↺</button>
-      <button id="modelBtn" title="Đổi model (M)">LITE</button>
+      <button id="handBtn" title="Bật/tắt skeleton tay (H)">✋</button>
+      <button id="headBtn" title="Bật/tắt skeleton đầu (E)">🙂</button>
       <button id="switchBtn" title="Đổi camera (C)">↔</button>
       <button id="fullBtn" title="Toàn màn hình (F)">⛶</button>
     </div>
   </div>
 
-  <div id="cards"></div>
-
   <div class="bottom">
     <div class="pills">
-      <div class="pill glass"><span class="dot"></span><b id="state">Đang chờ</b></div>
-      <div class="pill glass">👥 <b id="people">0</b></div>
       <div class="pill glass">FPS <b id="fps">0</b></div>
       <div class="pill glass">AI <b id="lat">--</b></div>
-      <div class="pill glass">REP <b id="reps">0</b></div>
+      <div class="pill glass">✋ <b id="hands">0</b></div>
+      <div class="pill glass">🙂 <b id="head">—</b></div>
+      <div class="pill glass">⚡ <b id="gest">—</b></div>
       <div class="pill glass">MODEL <b id="modelState">OFF</b></div>
     </div>
     <div class="row-btn">
@@ -44,7 +42,7 @@
   <div id="welcome" class="center">
     <div class="dialog">
       <h1>AI Pose Camera</h1>
-      <p>Skeleton neon, tracking nhiều người, đếm rep squat / chống đẩy / giơ tay và phản hồi form theo thời gian thực.</p>
+      <p>Skeleton neon 21 điểm cho từng ngón tay và đường viền đầu/mặt, nhận diện cử chỉ theo thời gian thực.</p>
       <div class="btns"><button id="startMain" class="primary">📷 Bắt đầu</button><button id="fullMain">⛶ Fullscreen</button></div>
       <p style="margin:12px 0 0;font-size:11px">Video xử lý hoàn toàn trên thiết bị bằng MediaPipe, không gửi lên server.</p>
     </div>
