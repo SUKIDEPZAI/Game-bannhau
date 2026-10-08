@@ -27,6 +27,8 @@ export class Engine {
     this.face = await build("face", mod.FaceLandmarker, { numFaces: 1, minFaceDetectionConfidence: .4, minFacePresenceConfidence: .4, minTrackingConfidence: .4 }, FACE);
     this.handConn = mod.HandLandmarker.HAND_CONNECTIONS;
     this.faceConn = mod.FaceLandmarker.FACE_LANDMARKS_CONTOURS;
+    this.faceMesh = mod.FaceLandmarker.FACE_LANDMARKS_TESSELATION;
+    this.faceOval = mod.FaceLandmarker.FACE_LANDMARKS_FACE_OVAL;
     this.ready = true;
   }
   detectHands(v, t) { try { this.ts.hand = Math.max(t, this.ts.hand + 1); return this.hands.detectForVideo(v, this.ts.hand).landmarks || []; } catch (e) { this.fail(e); return []; } }

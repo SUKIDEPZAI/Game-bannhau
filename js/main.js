@@ -1,13 +1,13 @@
 import { Engine } from "./engine.js";
 import { SmoothSet } from "./smoothing.js";
 import { gesture } from "./gesture.js";
-import { Renderer } from "./renderer.js";
+import { Renderer, STYLES } from "./renderer.js";
 
 const $ = (id) => document.getElementById(id);
 const video = $("video"), canvas = $("overlay"), stage = $("stage");
 const engine = new Engine(), rend = new Renderer(canvas);
-const slots = [0, 1].map(() => ({ set: new SmoothSet(21), label: "" }));
-const face = new SmoothSet(478, { minCutoff: 1.1, beta: 10, tau: 0.03 });
+const slots = [0, 1].map(() => ({ set: new SmoothSet(21, { minCutoff: 2, beta: 40, tau: 0.012 }), label: "" }));
+const face = new SmoothSet(478, { minCutoff: 1.4, beta: 24, dCutoff: 5, tau: 0.02 });
 let stream = null, running = false, facing = "user", frameNo = 0, lastVT = -1, lastRaf = 0;
 let show = { hands: true, head: true }, frames = 0, fpsT = performance.now(), infer = 0, hudT = 0, rawHands = 0, rawFace = 0, noDet = 0, useRVFC = false;
 
@@ -46,6 +46,7 @@ function stopCamera() { running = false; stream?.getTracks().forEach((t) => t.st
 function assignHands(dets, now) {
   const used = new Set(), aspect = video.videoWidth / video.videoHeight || 1;
   for (const lm of dets) {
+    if (Math.hypot(lm[0].x - lm[9].x, lm[0].y - lm[9].y) < 0.02) continue;   // tay mất dấu bị co về gốc → bỏ (kinh nghiệm từ reze-mipo)
     let best = -1, bd = Infinity;
     slots.forEach((s, i) => {
       if (used.has(i)) return;
@@ -80,16 +81,17 @@ function loop(now) {
   const dt = Math.min(.1, (now - lastRaf) / 1000); lastRaf = now;
   if (!useRVFC) runAI(now);
   rend.clear();
-  let hands = 0;
+  let hands = 0; const lead = infer / 1000 + 0.012;       // bù đúng độ trễ AI đo được + 1 frame hiển thị
   for (const s of slots) {
     const vis = show.hands && s.set.has && s.set.miss < 5; if (vis) hands++;
-    s.set.step(dt, vis); rend.hand(s.set, engine.handConn || [], s.label, dt);
+    s.set.lead = lead; s.set.step(dt, vis, now); rend.hand(s.set, engine.handConn || [], s.label, dt);
   }
-  face.step(dt, show.head && face.has && face.miss < 6);
-  if (engine.ready) rend.head(face, engine.faceConn);
+  face.lead = lead; face.step(dt, show.head && face.has && face.miss < 6, now);
+  if (hands === 2) rend.lasers(slots[0].set, slots[1].set);
+  if (engine.ready) rend.head(face, engine);
   if (now - hudT > 250) {
     $("fps").textContent = Math.round(frames * 1000 / (now - fpsT)); frames = 0; fpsT = now; hudT = now;
-    $("lat").textContent = Math.round(infer) + "ms"; $("hands").textContent = hands;
+    $("lat").textContent = Math.round(infer) + "ms"; $("lead").textContent = "-" + Math.round(lead * 1000) + "ms"; $("hands").textContent = hands;
     $("head").textContent = face.alpha > .5 ? "ON" : "—";
     $("gest").textContent = slots.filter((s) => s.set.alpha > .5).map((s) => s.label).join(" · ") || "—";
     if (noDet > 90) showError("AI đang chạy nhưng chưa thấy tay/đầu — đưa tay vào khung hình và đảm bảo đủ sáng.", 3000);
@@ -103,16 +105,18 @@ function snapshot() {
   g.drawImage(video, 0, 0, c.width, c.height); g.drawImage(canvas, 0, 0);
   c.toBlob((b) => { const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(b), download: `skeleton-${Date.now()}.png` }); a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); });
 }
+const cycleStyle = () => { rend.style = (rend.style + 1) % STYLES.length; $("style").textContent = STYLES[rend.style]; };
 const toggle = (k, btn) => { show[k] = !show[k]; btn.classList.toggle("off", !show[k]); };
 const full = () => document.fullscreenElement ? document.exitFullscreen?.() : document.documentElement.requestFullscreen?.().catch(() => {});
 
 $("startBtn").onclick = $("startMain").onclick = async () => { if (await ensureModel()) await startCamera(); };
 $("stopBtn").onclick = stopCamera; $("snapBtn").onclick = snapshot;
+$("styleBtn").onclick = cycleStyle;
 $("handBtn").onclick = () => toggle("hands", $("handBtn")); $("headBtn").onclick = () => toggle("head", $("headBtn"));
 $("fullBtn").onclick = $("fullMain").onclick = full;
 $("switchBtn").onclick = () => { facing = facing === "user" ? "environment" : "user"; if (running) startCamera(); };
 addEventListener("keydown", (e) => {
   const k = e.key.toLowerCase();
   if (k === "f") full(); else if (k === "c") $("switchBtn").click(); else if (k === "s") snapshot();
-  else if (k === "h") $("handBtn").click(); else if (k === "e") $("headBtn").click();
+  else if (k === "v") cycleStyle(); else if (k === "h") $("handBtn").click(); else if (k === "e") $("headBtn").click();
 });
