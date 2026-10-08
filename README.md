@@ -1,21 +1,22 @@
-# AI Hand & Head Skeleton v5
+# AI Hand & Head Skeleton — bản chạy trên Render
 
-Chỉ vẽ skeleton **bàn tay (21 điểm/tay, 2 tay)** và **đầu (478 điểm, vẽ đường viền)**; chạy 100% trên trình duyệt.
-
+Cấu trúc repo GitHub (không cần làm gì thêm):
 ```
-index.html · css/style.css
-js/main.js       vòng lặp (AI theo khung camera, vẽ theo tần số màn hình)
-js/engine.js     HandLandmarker + FaceLandmarker, GPU→CPU
-js/smoothing.js  One Euro filter + nội suy mũ 2 tầng
-js/gesture.js    Mở bàn tay / Nắm đấm / Like / Chỉ tay / Chữ V / OK / Pinch
-js/renderer.js   neon theo từng ngón, khung ngắm đầu
+server.js  package.json  render.yaml
+public/    ← index.html, css/, js/ (app)
 ```
 
-## Mượt hơn
-- Làm mượt 2 tầng: One Euro (chống rung) + nội suy ở 60Hz+ (trượt đều dù AI ~30Hz)
-- Gán tay vào 2 slot cố định theo vị trí cổ tay → bộ lọc không đổi chỗ khi hai tay gần nhau
-- Fade vào/ra khi mất/thấy lại; đầu chạy xen kẽ frame để giảm tải
-- Không shadowBlur; mỗi ngón 1 Path2D; độ dày nét tỉ lệ kích thước bàn tay
+## Deploy lên Render (Free)
+1. Push cả thư mục này lên GitHub.
+2. Render → **New → Blueprint** (đọc `render.yaml`) hoặc **New → Web Service**: Build `npm install`, Start `node server.js`, Plan **Free**.
+3. Mở URL `https://<tên>.onrender.com` (HTTPS nên camera hoạt động).
 
-Phím: `V` đổi phong cách (NEON/BONE/WIRE/HOLO) · `H` tay · `E` đầu · `S` chụp · `C` camera · `F` fullscreen.
-Chạy qua HTTPS hoặc `python3 -m http.server` (localhost).
+## Server làm gì
+- Phục vụ WASM + thư viện MediaPipe từ chính domain (`/vendor`), model `.task` cache trên server (`/models`) → tải nhanh, nén Brotli/gzip, cache 1 năm.
+- `/healthz` để Render kiểm tra sống.
+- **Keep-alive:** mỗi 60 giây server tự gọi `RENDER_EXTERNAL_URL/healthz` (đổi bằng `KEEPALIVE_MS`, hoặc đặt `KEEPALIVE_URL` nếu dùng domain riêng).
+
+## Lưu ý
+- AI chạy ngay trên máy người dùng (không gửi video lên Render) nên độ trễ skeleton do thiết bị quyết định; server chỉ giúp tải/khởi động nhanh hơn.
+- Tự ping không đánh thức được service đang ngủ. Nên thêm 1 dịch vụ ngoài (UptimeRobot/cron-job.org) gọi `/healthz` mỗi 5 phút làm dự phòng.
+- Free plan có 750 giờ/tháng — đủ cho 1 service chạy 24/7.
