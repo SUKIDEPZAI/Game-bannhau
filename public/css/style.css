@@ -36,3 +36,5 @@ button:hover{background:rgba(255,255,255,.1)}button:active{transform:scale(.96)}
 @media(max-width:600px){#cards{width:calc(100vw - 20px);bottom:90px}.card:nth-child(n+3){display:none}button{padding:8px 9px;min-height:38px}}
 button.off{opacity:.45}
 .pill b{max-width:42vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:inline-block;vertical-align:bottom}
+.tele{position:absolute;left:10px;top:58px;z-index:4;margin:0;padding:8px 10px;border-radius:12px;background:rgba(5,10,16,.7);border:1px solid var(--line);font:10.5px/1.5 ui-monospace,Menlo,Consolas,monospace;color:#bfeede;pointer-events:none;white-space:pre;max-width:calc(100vw - 20px);overflow:hidden}
+@media(max-width:600px){.tele{font-size:9px;top:54px}}
