@@ -17,5 +17,5 @@ js/renderer.js   neon theo từng ngón, khung ngắm đầu
 - Fade vào/ra khi mất/thấy lại; đầu chạy xen kẽ frame để giảm tải
 - Không shadowBlur; mỗi ngón 1 Path2D; độ dày nét tỉ lệ kích thước bàn tay
 
-Phím: `H` tay · `E` đầu · `S` chụp ảnh · `C` đổi camera · `F` fullscreen.
+Phím: `V` đổi phong cách (NEON/BONE/WIRE/HOLO) · `H` tay · `E` đầu · `S` chụp · `C` camera · `F` fullscreen.
 Chạy qua HTTPS hoặc `python3 -m http.server` (localhost).
