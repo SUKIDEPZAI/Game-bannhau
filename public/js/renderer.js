@@ -5,14 +5,14 @@ export const STYLES = ["NEON", "BONE", "WIRE", "HOLO"];
 const grp = (a, b) => PALM.has(a) && PALM.has(b) ? 5 : Math.floor((Math.max(a, b) - 1) / 4);
 
 export class Renderer {
-  mirrored = true; style = 0;
+  mirrored = true; style = 0; fx = { glow: true, trail: true, text: true, lasers: true };
   constructor(canvas) { this.c = canvas; this.g = canvas.getContext("2d", { desynchronized: true }); }
   resize(w, h) { if (this.c.width !== w || this.c.height !== h) { this.c.width = w; this.c.height = h; } }
   clear() { this.g.clearRect(0, 0, this.c.width, this.c.height); }
 
   layers(path, col, w, al, glow = 1) {
     const g = this.g; g.strokeStyle = col;
-    if (glow) { g.globalAlpha = al * .14; g.lineWidth = w * 4.2; g.stroke(path); g.globalAlpha = al * .4; g.lineWidth = w * 2; g.stroke(path); }
+    if (glow && this.fx.glow) { g.globalAlpha = al * .14; g.lineWidth = w * 4.2; g.stroke(path); g.globalAlpha = al * .4; g.lineWidth = w * 2; g.stroke(path); }
     g.globalAlpha = al * .95; g.lineWidth = w * .75; g.strokeStyle = glow ? "#fff" : col; g.stroke(path);
   }
 
@@ -25,7 +25,7 @@ export class Renderer {
   }
 
   hand(s, conn, label) {
-    this.trail(s); if (s.alpha < .02) return;
+    if (this.fx.trail) this.trail(s); if (s.alpha < .02) return;
     const g = this.g, W = this.c.width, H = this.c.height, d = s.d, st = this.style, al = s.alpha;
     const px = (i) => d[i * 2] * W, py = (i) => d[i * 2 + 1] * H;
     const size = Math.hypot(px(0) - px(9), py(0) - py(9)), w = Math.max(2, size * .035);
@@ -53,11 +53,12 @@ export class Renderer {
       else if (st === 3) { g.arc(x, y, r * 1.2, 0, TAU); tip ? g.fill() : g.stroke(); }
       else { g.arc(x, y, r, 0, TAU); g.fill(); if (tip || st === 1) { g.fillStyle = "#fff"; g.beginPath(); g.arc(x, y, r * .45, 0, TAU); g.fill(); } }
     }
-    this.drawTrail(s, size);
-    this.tag(label, px(12), Math.min(py(8), py(12), py(16)) - size * .35, "#fff", al, size);
+    if (this.fx.trail) this.drawTrail(s, size);
+    if (this.fx.text) this.tag(label, px(12), Math.min(py(8), py(12), py(16)) - size * .35, "#fff", al, size);
   }
 
   lasers(a, b) {                                            // tia sáng giữa đầu ngón hai tay (ý tưởng từ web-ar-hand-tracking)
+    if (!this.fx.lasers) return;
     const al = Math.min(a.alpha, b.alpha); if (al < .05) return;
     const g = this.g, W = this.c.width, H = this.c.height; g.lineCap = "round";
     TIPS.forEach((i, k) => {
@@ -100,7 +101,7 @@ export class Renderer {
     const m = size * .08, L = size * .12, X0 = x0 * W - m, Y0 = y0 * H - m, X1 = x1 * W + m, Y1 = y1 * H + m, br = new Path2D();
     for (const [x, y, sx, sy] of [[X0, Y0, 1, 1], [X1, Y0, -1, 1], [X0, Y1, 1, -1], [X1, Y1, -1, -1]]) { br.moveTo(x + sx * L, y); br.lineTo(x, y); br.lineTo(x, y + sy * L); }
     g.globalAlpha = al * .9; g.strokeStyle = HEAD; g.lineWidth = w * 1.6; g.stroke(br);
-    this.tag("HEAD", (X0 + X1) / 2, Y0 - size * .07, HEAD, al, size * .6); g.globalAlpha = 1;
+    if (this.fx.text) this.tag("HEAD", (X0 + X1) / 2, Y0 - size * .07, HEAD, al, size * .6); g.globalAlpha = 1;
   }
 
   tag(text, x, y, col, alpha, size) {
