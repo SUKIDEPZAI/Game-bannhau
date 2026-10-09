@@ -1,0 +1,40 @@
+== A. Sai lệch hiển thị so với khung video đang hiện (đơn vị: kích thước bàn tay; càng nhỏ càng tốt) ==
+fps  scenario   |  v12 rms  v13 rms | v12 tipRms v13 tipRms | v12 max  v13 max
+ 30  rest       |  0.003   0.004  |  0.009     0.011   |  0.007   0.011
+ 30  const      |  0.147   0.038  |  0.148     0.040   |  0.176   0.071
+ 30  sine       |  0.238   0.040  |  0.241     0.041   |  0.376   0.119
+ 30  stop       |  0.099   0.025  |  0.104     0.030   |  0.379   0.143
+ 30  fastrev    |  0.238   0.043  |  0.239     0.045   |  0.389   0.085
+ 60  rest       |  0.002   0.003  |  0.007     0.010   |  0.006   0.007
+ 60  const      |  0.147   0.009  |  0.148     0.015   |  0.172   0.022
+ 60  sine       |  0.262   0.020  |  0.262     0.023   |  0.397   0.051
+ 60  stop       |  0.097   0.010  |  0.099     0.013   |  0.389   0.057
+ 60  fastrev    |  0.384   0.037  |  0.407     0.038   |  0.629   0.081
+120  rest       |  0.002   0.003  |  0.005     0.008   |  0.005   0.007
+120  const      |  0.119   0.034  |  0.121     0.036   |  0.144   0.054
+120  sine       |  0.224   0.054  |  0.225     0.055   |  0.337   0.088
+120  stop       |  0.082   0.014  |  0.084     0.015   |  0.361   0.087
+120  fastrev    |  0.402   0.120  |  0.397     0.119   |  0.599   0.173
+
+== B. Overshoot khi dừng đột ngột (tay chạy 1.2/s rồi đứng; vượt quá vị trí dừng, đơn vị hand-size) ==
+fps 30: v12   0.361 · v13   0.125
+fps 60: v12   0.327 · v13   0.005
+fps 120: v12   0.343 · v13   0.000
+
+== C. Outlier (1 đầu ngón nhảy +0.2 trong 1 khung) — độ lệch tối đa của đầu ngón ==
+v12:   0.852
+v13:   0.118
+
+== D. Mất khung 400ms rồi tay xuất hiện lại cách 0.12 — bước nhảy lớn nhất giữa 2 lần vẽ (teleport) ==
+v12:   0.965 hand-size/lần vẽ
+v13:   0.200 hand-size/lần vẽ
+
+== E. Màn hình 144Hz, camera 60fps (render độc lập inference) — rms sine ==
+v12:   0.212
+v13:   0.058
+
+== F. So sánh bộ lọc 1D (60fps, σ=0.002) — jitter@rest(×1e3) · lag@const(ms) · overshoot@stop(×1e3) · rms@reversal(×1e3) ==
+OneEuro_v13     jitter 1.01 · lag 5.5ms · overshoot 1.87 · rev 3.12 · 90 ns/call
+AlphaBeta       jitter 1.18 · lag 0.6ms · overshoot 14.48 · rev 7.25 · 95 ns/call
+Kalman_CV       jitter 1.88 · lag 0.6ms · overshoot 4.25 · rev 1.90 · 318 ns/call
+OneEuro_hiBeta  jitter 1.21 · lag 3.1ms · overshoot 2.50 · rev 2.32 · 79 ns/call
