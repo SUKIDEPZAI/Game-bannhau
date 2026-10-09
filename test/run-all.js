@@ -90,3 +90,51 @@ test("PerfController: hạ cấp khi quá tải kéo dài, không dao động, p
   const q = new PerfController(PERF); let flips = 0, last = 0; for (let t2 = 0; t2 < 60000; t2 += 500) { const l = q.update(t2, t2 % 2000 < 1000 ? hot : cool); if (l !== null) { flips++; last = l; } } assert.ok(flips <= 2, `flips ${flips}`);
 });
 test("Metric: percentile đúng", () => { const m = new Metric(100); for (let i = 1; i <= 100; i++) m.push(i); const s = m.stats(); assert.equal(s.max, 100); assert.ok(Math.abs(s.p50 - 50) <= 1 && Math.abs(s.p95 - 95) <= 1 && Math.abs(s.p99 - 99) <= 1); });
+
+// ================= v14: tương tác đầu ngón + renderer =================
+import { Interact } from "../public/js/interact.js";
+import { Renderer, STYLES } from "../public/js/renderer.js";
+import { INTERACT } from "../public/js/config.js";
+const mkBtn = (l, t, w = 60, h = 60) => { const e = { clicked: 0, disabled: false, cls: new Set(), vars: {}, classList: { add: (c) => e.cls.add(c), remove: (c) => e.cls.delete(c) }, style: { setProperty: (k, v) => (e.vars[k] = v) }, click: () => e.clicked++, getBoundingClientRect: () => ({ left: l, top: t, right: l + w, bottom: t + h, width: w, height: h }) }; return e; };
+const mkUI = (btns, rect = { left: 0, top: 0, width: 960, height: 540 }) => new Interact({ getBoundingClientRect: () => rect }, { ...INTERACT }, () => btns);
+const mkSlot = (ext = [1, 0, 0, 0], thumb = 0, label = "Chỉ tay") => ({ set: { d: new Float32Array(42) }, vis: true, g: { ext, thumb }, label });
+const setTip = (s, i, px, py, vw = 960, vh = 540) => { s.set.d[i * 2] = px / vw; s.set.d[i * 2 + 1] = py / vh; };
+const sim = (ui, slot, ms, fn = null, mirrored = false, t0 = 1000) => { let t = t0; for (; t < t0 + ms; t += 16) { fn?.(t - t0); ui.update(t, [slot], mirrored, 960, 540); } return t; };
+
+test("tương tác: CHỈ TAY giữ yên ~0.7s → bấm đúng 1 lần (có cooldown), không bấm sớm", () => {
+  const b = mkBtn(250, 190), ui = mkUI([b]), s = mkSlot(); setTip(s, 8, 280, 220); let first = -1;
+  sim(ui, s, 3000, (ms) => { if (b.clicked && first < 0) first = ms; });
+  assert.equal(b.clicked, 1); assert.ok(first >= 650 && first <= 800, `first=${first}`);
+});
+test("tương tác: bàn tay XÒE (5 ngón) chỉ hover, không bấm", () => {
+  const b = mkBtn(250, 190), ui = mkUI([b]), s = mkSlot([1, 1, 1, 1], 1, "Mở bàn tay"); setTip(s, 8, 280, 220); sim(ui, s, 2500);
+  assert.equal(b.clicked, 0); assert.ok(b.cls.has("kb-hover"));
+});
+test("tương tác: quét nhanh qua nút không bấm; hover bật rồi tắt khi tay rời", () => {
+  const b = mkBtn(400, 200), ui = mkUI([b]), s = mkSlot(); sim(ui, s, 800, (ms) => setTip(s, 8, 100 + ms * 1.2, 230));   // ~1200 px/s
+  assert.equal(b.clicked, 0, "không bấm"); s.vis = false; ui.update(5000, [s], false, 960, 540); ui.update(5016, [s], false, 960, 540); assert.ok(!b.cls.has("kb-hover"), "hover phải tắt");
+});
+test("tương tác: CHỤM (Pinch) bấm ngay ở giữa ngón cái + trỏ, giữ chụm không bấm lặp", () => {
+  const b = mkBtn(250, 190), ui = mkUI([b]), s = mkSlot([1, 0, 0, 0], 0, ""); setTip(s, 4, 270, 215); setTip(s, 8, 290, 225); sim(ui, s, 200); assert.equal(b.clicked, 0);
+  s.label = "Pinch"; sim(ui, s, 2500, null, false, 2000); assert.equal(b.clicked, 1);
+});
+test("tương tác: ánh xạ gương (mirror) và object-fit: cover đúng", () => {
+  const L = mkBtn(228, 190), R = mkBtn(642, 190), ui = mkUI([L, R]), s = mkSlot([1, 1, 1, 1], 1); setTip(s, 8, 288, 220); sim(ui, s, 100, null, true);
+  assert.ok(R.cls.has("kb-hover") && !L.cls.has("kb-hover"), "mirror: 288 → 672");
+  const C = mkBtn(240, 450, 60, 60), ui2 = mkUI([C], { left: 0, top: 0, width: 540, height: 960 }), s2 = mkSlot([1, 1, 1, 1], 1); setTip(s2, 8, 480, 270); sim(ui2, s2, 100);   // tâm video → tâm màn dọc
+  assert.ok(C.cls.has("kb-hover"), "cover: tâm → (270,480)");
+});
+test("tương tác: tắt (ui.on=false) thì không hover/bấm", () => { const b = mkBtn(250, 190), ui = mkUI([b]), s = mkSlot(); setTip(s, 8, 280, 220); ui.on = false; sim(ui, s, 2000); assert.equal(b.clicked, 0); assert.ok(!b.cls.has("kb-hover")); });
+
+test("renderer: 4 phong cách chạy không lỗi, mỗi tay có 5 vòng tròn đầu ngón, không còn hàm vẽ đầu", () => {
+  for (let st = 0; st < STYLES.length; st++) {
+    let arcs = 0; const ctx = new Proxy({}, { get: (t, k) => k === "measureText" ? () => ({ width: 10 }) : (k in t ? t[k] : (...a) => { if (k === "arc") arcs++; }), set: (t, k, v) => (t[k] = v, true) });
+    const r = new Renderer({ width: 960, height: 540, getContext: () => ctx }), L = hand(.5, .6), d = new Float32Array(42); L.forEach((p, i) => { d[i * 2] = p.x; d[i * 2 + 1] = p.y; });
+    r.style = st; r.mirrored = true; r.fx = { glow: true, trail: true, text: true, lasers: true };
+    const conn = [[0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [5, 6], [6, 7], [7, 8], [5, 9], [9, 10], [10, 11], [11, 12], [9, 13], [13, 14], [14, 15], [15, 16], [13, 17], [17, 18], [18, 19], [19, 20], [0, 17]].map(([start, end]) => ({ start, end }));
+    const s = { d, alpha: 1, ui: { hov: new Uint8Array([0, 1, 0, 0, 0]), prog: new Float32Array([0, .5, 0, 0, 0]), flash: -1e9 } };
+    r.hand(s, conn, "Chỉ tay", 1000); r.hand(s, conn, "Chỉ tay", 1020); r.lasers(s, s);
+    assert.ok(arcs >= 10, `style ${STYLES[st]} arcs=${arcs}`);
+  }
+  assert.equal(typeof Renderer.prototype.head, "undefined");
+});
