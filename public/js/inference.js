@@ -6,10 +6,21 @@ const CDN = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
 const GS = "https://storage.googleapis.com/mediapipe-models";
 const G_HAND = `${GS}/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`, G_FACE = `${GS}/face_landmarker/face_landmarker/float16/1/face_landmarker.task`;
 
+// Render chỉ được dùng khi /ping trả JSON ok VÀ /vendor/vision_bundle.cjs tồn tại (tránh trường hợp URL trỏ vào app khác / Render thiếu file).
+async function renderOk() {
+  if (!RENDER_URL) return false;
+  try {
+    const sig = AbortSignal.timeout(3000);
+    const [p, v] = await Promise.all([fetch(`${RENDER_URL}/ping`, { cache: "no-store", signal: sig }), fetch(`${RENDER_URL}/vendor/vision_bundle.cjs`, { method: "HEAD", signal: sig })]);
+    return p.ok && v.ok && !!(await p.json().catch(() => null))?.ok;
+  } catch { return false; }                                       // Render ngủ / lỗi → CDN
+}
+// Trả về DANH SÁCH nguồn theo thứ tự thử: [Render?, CDN]. Worker lỗi ở nguồn này → thử nguồn kế (trước khi rơi xuống main thread).
 export async function pickSources() {
-  if (RENDER_URL) try { if ((await fetch(`${RENDER_URL}/ping`, { cache: "no-store", signal: AbortSignal.timeout(3000) })).ok)
-    return { root: `${RENDER_URL}/vendor`, handUrl: `${RENDER_URL}/models/hand_landmarker.task`, faceUrl: `${RENDER_URL}/models/face_landmarker.task` }; } catch { /* Render ngủ → CDN */ }
-  return { root: CDN, handUrl: G_HAND, faceUrl: G_FACE };
+  const out = [];
+  if (await renderOk()) out.push({ root: `${RENDER_URL}/vendor`, handUrl: `${RENDER_URL}/models/hand_landmarker.task`, faceUrl: `${RENDER_URL}/models/face_landmarker.task` });
+  out.push({ root: CDN, handUrl: G_HAND, faceUrl: G_FACE });
+  return out;
 }
 
 export class InferenceClient {
@@ -17,7 +28,7 @@ export class InferenceClient {
   init(cfg) {
     return new Promise((res, rej) => {
       const w = (this.w = new Worker(new URL("./inference.worker.js", import.meta.url)));   // classic worker
-      const to = setTimeout(() => rej(new Error("worker timeout")), 45000);
+      const to = setTimeout(() => rej(new Error("worker timeout")), 30000);
       w.onmessage = ({ data: m }) => {
         if (m.type === "ready") { clearTimeout(to); this.ready = true; this.delegate = m.delegate; Object.assign(this, m.conn); res(); }
         else if (m.type === "error") { clearTimeout(to); rej(new Error(m.message)); }

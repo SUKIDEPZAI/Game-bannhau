@@ -2,7 +2,8 @@ import { InferenceClient, MainThreadAI, pickSources } from "./inference.js";
 import { SmoothSet } from "./smoothing.js";
 import { GestureTracker, SwipeDetector } from "./gesture.js";
 import { Renderer, STYLES } from "./renderer.js";
-import { RENDER_URL, PROFILES, FILTER, TRACK, SCHED, PERF } from "./config.js";
+import { RENDER_URL, PROFILES, FILTER, TRACK, SCHED, PERF, INTERACT } from "./config.js";
+import { Interact } from "./interact.js";
 import { Metric, fmtP, Recorder } from "./telemetry.js";
 import { PerfController } from "./perf.js";
 import { pickAssignment } from "./tracking.js";
@@ -11,12 +12,13 @@ const $ = (id) => document.getElementById(id), setText = (id, t) => { const e = 
 const video = $("video"), canvas = $("overlay"), stage = $("stage"), rend = new Renderer(canvas);
 const common = { maxH: FILTER.maxHorizon, gapMs: FILTER.gapMs, reacqMs: FILTER.reacqRampMs, soft: FILTER.outlierSoft, hard: FILTER.outlierHard };
 const slots = [0, 1].map(() => ({ set: new SmoothSet(21, { ...FILTER.hand, ...common }), label: "", g: new GestureTracker(), sw: new SwipeDetector(), swipe: "", swipeT: -1e9 }));
-const face = new SmoothSet(478, { ...FILTER.face, ...common });
 const M = Object.fromEntries(["ai", "age", "render", "xfer", "cap", "xout", "wq", "back", "gest"].map((k) => [k, new Metric()]));
-const rec = new Recorder(), perf = new PerfController(PERF); let perfT = 0, lastFaceT = 0, lastSubmitPf = -1, fm = { now: 0, cap: 0, pf: 0 };
+const rec = new Recorder(), perf = new PerfController(PERF); let perfT = 0, lastSubmitPf = -1, fm = { now: 0, cap: 0, pf: 0, n: 0 };
 let ai = null, pname = "BALANCED", P = PROFILES[pname], stream = null, running = false, facing = "user", frameNo = 0, lastRaf = 0, camLag = 25;
-const show = { hands: true, head: true };
-const T = { stale: 0, cam: 0, infer: 0, th: 0, tf: 0, rtt: 0, filter: 0, render: 0, age: 0, camFps: 0, aiFps: 0, dispFps: 0, dropped: 0, res: "—" };
+const show = { hands: true };
+const ix = new Interact(canvas, INTERACT, () => document.querySelectorAll(INTERACT.selector));
+globalThis.__skel = { slots, fm, ix };   // phục vụ test/E2E & gỡ lỗi trong Console
+const T = { stale: 0, cam: 0, infer: 0, th: 0, rtt: 0, filter: 0, render: 0, age: 0, camFps: 0, aiFps: 0, dispFps: 0, dropped: 0, res: "—" };
 const cnt = { cam: 0, ai: 0, disp: 0 }; let cntT = performance.now(), hudT = 0, noDet = 0;
 const ema = (cur, v, k = 0.2) => cur + (v - cur) * k;
 
@@ -28,11 +30,13 @@ const setBtn = (on) => { $("startBtn").classList.toggle("hidden", on); $("stopBt
 async function ensureModel() {
   if (ai?.ready) return true;
   setText("modelState", "LOAD"); showError("Đang tải AI…", 0);
-  try {
-    const src = await pickSources(); const c = new InferenceClient();
-    await c.init({ ...src, face: PROFILES[pname].faceFps > 0 }); ai = c;
-  } catch (e) {
-    console.warn("Worker lỗi → chạy main thread:", e);
+  const srcs = await pickSources();
+  for (const src of srcs) {                                        // Worker: thử Render rồi CDN; chỉ khi cả hai lỗi mới rơi xuống main thread
+    const c = new InferenceClient();
+    try { await c.init({ ...src, face: false }); ai = c; break; }
+    catch (e) { console.warn("Worker lỗi với nguồn", src.root, e); c.w?.terminate?.(); }
+  }
+  if (!ai) {
     try { const m = new MainThreadAI(); await m.init(); ai = m; } catch (e2) { setText("modelState", "ERR"); showError("Không tải được AI: " + (e2.message || e2)); return false; }
   }
   ai.onResult = onResult; ai.onIdle = kick; setText("modelState", `${ai.kind}/${ai.delegate}`); $("error").classList.add("hidden"); return true;
@@ -46,6 +50,7 @@ async function startCamera() {
     video.srcObject = stream; await video.play();
     const s = stream.getVideoTracks()[0].getSettings(); T.res = `${s.width}x${s.height}@${Math.round(s.frameRate || 0)}`;   // camera thật sự cấp gì (có thể khác yêu cầu)
     rend.mirrored = facing === "user"; stage.classList.toggle("mirror", rend.mirrored);
+    lastSubmitPf = -1; fm.n = 0; perfT = performance.now() + PERF.warmupMs;   // khởi động lại bộ đếm khung + chờ ổn định trước khi đánh giá hiệu năng
     $("welcome").classList.add("hidden"); setBtn(true); noDet = 0;
     if (!running) { running = true; lastRaf = performance.now(); requestAnimationFrame(loop); video.requestVideoFrameCallback(onFrame); }
   } catch (e) { console.error(e); setBtn(false); showError("Không mở được camera." + (isSecureContext ? " Hãy cấp quyền camera." : " Cần HTTPS hoặc localhost.")); }
@@ -62,21 +67,20 @@ function onFrame(now, meta) {
     T.cam = ema(T.cam, now - meta.captureTime);
     if (meta.expectedDisplayTime) camLag = ema(camLag, meta.expectedDisplayTime - meta.captureTime);
   }
-  fm.now = now; fm.pf = meta.presentedFrames; fm.cap = SCHED.useCaptureTime && hasCap ? meta.captureTime : now;
+  fm.now = now; fm.pf = meta.presentedFrames ?? ++fm.n;                          // trình duyệt không có presentedFrames → đếm callback
+  fm.cap = SCHED.useCaptureTime && hasCap ? meta.captureTime : now;   // thời điểm CHỤP dùng cho dt/vận tốc (không có → thời điểm callback)
   if (ai?.busy) T.dropped++; kick();
 }
 function kick() {
   if (!running || !ai?.ready || document.hidden || ai.busy || fm.pf === lastSubmitPf) return;
   lastSubmitPf = fm.pf; frameNo++; rend.resize(video.videoWidth, video.videoHeight);
-  const fps = P.faceFps * perf.faceScale, wantFace = show.head && fps > 0 && fm.now - lastFaceT >= 1000 / fps;   // face theo THỜI GIAN, hạ trước khi hạ tay
-  if (wantFace) lastFaceT = fm.now;
-  ai.submit(video, fm.now, { hands: show.hands, face: wantFace }, fm.cap);
+  ai.submit(video, fm.now, { hands: show.hands, face: false }, fm.cap);
 }
 
 function onResult(m) {
   cnt.ai++; const t0 = performance.now(); rec.push(m);
-  if (m.faceOnly) { if (m.tFace) T.tf = ema(T.tf, m.tFace); if (m.face) { if (face.miss >= 8) face.reset(); face.pushPacked(m.face, 0, m.ts, m.ts); noDet = 0; } else face.miss++; return; }
-  if (t0 - m.ts > SCHED.staleMs) { T.stale++; return; }            // khung quá cũ: bỏ, không dùng dự đoán để che
+  if (m.faceOnly) return;
+  if (t0 - m.ts - m.tAll > SCHED.staleMs) { T.stale++; return; }  // chỉ bỏ khi CHỜ/TRUYỀN quá lâu (backlog); AI chậm vẫn phải hiển thị
   T.infer = ema(T.infer, m.tAll); T.th = ema(T.th, m.tHand); M.ai.push(m.tAll);
   T.rtt = ema(T.rtt, t0 - m.ts); M.xfer.push(Math.max(0, t0 - m.ts - m.tAll));
   if (m.tRecv && ai.tPost) { M.cap.push(ai.cap); M.xout.push(Math.max(0, m.tRecv - ai.tPost)); M.wq.push(Math.max(0, m.tH0 - m.tRecv)); M.back.push(Math.max(0, m.tRes - m.tSend)); }
@@ -112,47 +116,45 @@ function loop(raf) {
   const lead = (P.predict === "world" ? camLag / 1000 : 0) + 0.004;   // "video": bám khung hình đang hiển thị; "world": bám tay thật (dễ lệch trước video)
   let hands = 0;
   for (const s of slots) {
-    const vis = show.hands && s.set.has && s.set.miss < TRACK.lostHideMiss; if (vis) hands++;
+    const vis = s.vis = show.hands && s.set.has && s.set.miss < TRACK.lostHideMiss; if (vis) hands++;
     s.set.lead = lead; s.set.step(dt, vis, now); rend.hand(s.set, ai?.handConn || [], s.label, now);
   }
   if (hands === 2) rend.lasers(slots[0].set, slots[1].set);
-  if (P.faceFps > 0 && perf.faceScale > 0 && ai?.ready) { face.lead = lead; face.step(dt, show.head && face.has && face.miss < 6, now); rend.head(face, ai); }
+  ix.update(now, slots, rend.mirrored, canvas.width, canvas.height);   // vòng tròn đầu ngón ↔ nút trên màn hình
   const rt = performance.now() - r0; T.render = ema(T.render, rt); M.render.push(rt);
-  T.age = ema(T.age, now - Math.max(slots[0].set.tAge, slots[1].set.tAge)); M.age.push(T.age);
+  let ta = 0; for (const s of slots) if (s.set.alpha > .3 && s.set.tAge > ta) ta = s.set.tAge;
+  if (ta) { T.age = ema(T.age, now - ta); M.age.push(now - ta); }   // chỉ đo khi có tay (tránh nhiễm số 0 lúc chưa có dữ liệu)
   if (now - perfT > PERF.evalMs) { perfT = now; const lv = perf.update(now, { aiP95: M.ai.stats().p95, ageP95: M.age.stats().p95, renderP95: M.render.stats().p95 }); if (lv !== null) applyPerf(); }
   if (now - hudT > 250) hud(now, hands);
 }
 
-function applyPerf() {
-  Object.assign(rend.fx, P.fx); if (perf.fxOff) Object.assign(rend.fx, { glow: false, trail: false, text: false, lasers: false });
-  if (perf.faceScale === 0) { face.reset(); face.miss = 99; } setText("prof", pname + (perf.level ? ` ↓${perf.level}` : ""));
-}
+function applyPerf() { perf.applyFx(rend.fx, P.fx); setText("prof", pname + (perf.level ? ` ↓${perf.level}` : "")); }
 function hud(now, hands) {
   const dtc = (now - cntT) / 1000; cntT = now; hudT = now;
   T.camFps = cnt.cam / dtc; T.aiFps = cnt.ai / dtc; T.dispFps = cnt.disp / dtc; cnt.cam = cnt.ai = cnt.disp = 0;
   const f = (v) => v.toFixed(1).padStart(5), vs = 500 / Math.max(30, T.dispFps);                 // nửa chu kỳ màn hình (ƯỚC LƯỢNG)
   const total = T.cam + T.age + T.render + vs;
   setText("fps", Math.round(T.dispFps)); setText("lat", T.infer.toFixed(1) + "ms"); setText("hands", hands);
-  setText("head", face.alpha > .5 ? "ON" : "—"); setText("gest", slots.filter((s) => s.set.alpha > .5).map((s) => s.label + (now - s.swipeT < 700 ? " ↯" + ({ L: "←", R: "→", U: "↑", D: "↓" }[s.swipe] || "") : "")).join(" · ") || "—");
+  setText("gest", slots.filter((s) => s.set.alpha > .5).map((s) => s.label + (now - s.swipeT < 700 ? " ↯" + ({ L: "←", R: "→", U: "↑", D: "↓" }[s.swipe] || "") : "")).join(" · ") || "—");
   setText("lead", "~" + Math.round(T.age) + "ms");
   $("tele").textContent =
 `PROFILE ${pname}${perf.level ? " ↓" + perf.level : ""} · ${ai?.kind || "-"} · ${T.res}      [ms]  P50/P95/P99/MAX
 CAM      ${f(T.cam)}  [đo] tuổi khung lúc callback${T.cam ? "" : " (không có captureTime)"}
 CAPTURE  ${f(M.cap.stats().p50)}  ${fmtP(M.cap)}  [đo] createImageBitmap
 XFER→W   ${f(M.xout.stats().p50)}  ${fmtP(M.xout)}  [đo] main→worker
-AI       ${f(T.infer)}  ${fmtP(M.ai)}  [đo] hand ${T.th.toFixed(1)} / face ${T.tf.toFixed(1)}
+AI       ${f(T.infer)}  ${fmtP(M.ai)}  [đo] hand ${T.th.toFixed(1)}
 W→MAIN   ${f(M.back.stats().p50)}  ${fmtP(M.back)}  [đo] pack+trả về
 POST     ${f(T.filter)}  ${fmtP(M.gest)}  [đo] assign+filter+gesture
 RENDER   ${f(T.render)}  ${fmtP(M.render)}  [đo] CPU encode lệnh vẽ
 AGE      ${f(T.age)}  ${fmtP(M.age)}  [đo] từ lúc trình chiếu khung → vẽ
 EST TOTAL${f(total)}  [ước lượng] cam+age+render+½vsync (CHƯA phải motion-to-photon)
+TƯƠNG TÁC ${ix.on ? "BẬT" : "TẮT"} · bấm ${ix.clicks}
 FPS cam ${T.camFps.toFixed(0)} · ai ${T.aiFps.toFixed(0)} · hiển thị ${T.dispFps.toFixed(0)} · DROPPED ${T.dropped} · STALE ${T.stale}`;
-  if (noDet > 90) showError("AI chạy nhưng chưa thấy tay/đầu — đưa tay vào khung và đủ sáng.", 3000);
+  if (noDet > 90) showError("AI chạy nhưng chưa thấy tay — đưa tay vào khung và đủ sáng.", 3000);
 }
 
 async function setProfile(n) {
-  pname = n; P = PROFILES[n]; Object.assign(rend.fx, P.fx); rend.style = P.style; setText("style", STYLES[rend.style]); setText("prof", n);
-  if (!P.faceFps) { face.reset(); face.miss = 99; }
+  pname = n; P = PROFILES[n]; perf.applyFx(rend.fx, P.fx); rend.style = P.style; setText("style", STYLES[rend.style]); setText("prof", n);
   if (running) await startCamera();
 }
 const cycleProfile = () => setProfile(Object.keys(PROFILES)[(Object.keys(PROFILES).indexOf(pname) + 1) % 3]);
@@ -175,11 +177,13 @@ pingRender(); setInterval(pingRender, 60000);
 
 $("startBtn").onclick = $("startMain").onclick = async () => { await setProfile(pname); if (await ensureModel()) await startCamera(); };
 $("stopBtn").onclick = stopCamera; $("snapBtn").onclick = snapshot; $("profBtn").onclick = cycleProfile; $("styleBtn").onclick = cycleStyle;
-$("handBtn").onclick = () => toggle("hands", $("handBtn")); $("headBtn").onclick = () => toggle("head", $("headBtn"));
+$("handBtn").onclick = () => toggle("hands", $("handBtn"));
+const toggleIx = () => { ix.on = !ix.on; $("uiBtn").classList.toggle("off", !ix.on); };
+$("uiBtn").onclick = toggleIx;
 $("fullBtn").onclick = $("fullMain").onclick = full;
 $("switchBtn").onclick = () => { facing = facing === "user" ? "environment" : "user"; if (running) startCamera(); };
 addEventListener("keydown", (e) => {
   const k = e.key.toLowerCase();
-  if (k === "f") full(); else if (k === "c") $("switchBtn").click(); else if (k === "s") snapshot(); else if (k === "v") cycleStyle();
+  if (k === "f") full(); else if (k === "c") $("switchBtn").click(); else if (k === "s") snapshot(); else if (k === "v") cycleStyle(); else if (k === "i") toggleIx();
   else if (k === "p") cycleProfile(); else if (k === "t") $("tele").classList.toggle("hidden"); else if (k === "r") { if (!rec.toggle() && rec.rows.length) { const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(new Blob([rec.toJSONL()], { type: "application/jsonl" })), download: `replay-${Date.now()}.jsonl` }); a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); } showError(rec.on ? "● Đang ghi replay (R để dừng + tải)" : "Đã lưu replay", 2500); } else if (k === "h") $("handBtn").click(); else if (k === "e") $("headBtn").click();
 });

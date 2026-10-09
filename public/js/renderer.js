@@ -1,8 +1,17 @@
-// 4 phong cách skeleton (NEON / BONE / WIRE / HOLO) cho tay + đầu. Không shadowBlur; mỗi nhóm 1 Path2D.
+// Skeleton TAY v14 (không còn đầu/mặt). Phong cách: XƯƠNG (mặc định) · NEON · WIRE · HOLO.
+// XƯƠNG: xương bàn tay (wrist→MCP) + đốt ngón (MCP→PIP→DIP→TIP) vẽ như xương: thân sáng, viền tối, khớp tròn nhỏ dần về phía đầu ngón.
+// Đầu ngón = VÒNG TRÒN tương tác (hover sáng lên, vòng tiến trình khi giữ yên, gợn sóng khi bấm). Không cấp phát trong vòng vẽ; mỗi lớp gộp 1 path.
 const FINGER = ["#ff4fa3", "#ffdc3a", "#00f5a0", "#45a3ff", "#b96cff", "#e8f4ff"];
-const TIPS = [4, 8, 12, 16, 20], TIPK = (() => { const a = new Int8Array(21).fill(-1); [4, 8, 12, 16, 20].forEach((v, k) => a[v] = k); return a; })(), PALM = new Set([0, 5, 9, 13, 17]), HEAD = "#72f2ff", TAU = 6.2832;
-export const STYLES = ["NEON", "BONE", "WIRE", "HOLO"];
+const TIPS = [4, 8, 12, 16, 20], TAU = 6.2832, ACC = "#72f2ff", BONE = "#f2f6fb", INK = "#04101a";
+const TIPK = (() => { const a = new Int8Array(21).fill(-1); TIPS.forEach((v, k) => a[v] = k); return a; })();
+const PALM = new Set([0, 5, 9, 13, 17]);
+export const STYLES = ["XƯƠNG", "NEON", "WIRE", "HOLO"];
 const grp = (a, b) => PALM.has(a) && PALM.has(b) ? 5 : Math.floor((Math.max(a, b) - 1) / 4);
+// Giải phẫu: xương bàn (metacarpal, dày) tách khỏi đốt ngón (phalanges, mảnh).
+const META = [[0, 1], [1, 2], [0, 5], [0, 9], [0, 13], [0, 17]];
+const PHAL = [[2, 3], [3, 4], [5, 6], [6, 7], [7, 8], [9, 10], [10, 11], [11, 12], [13, 14], [14, 15], [15, 16], [17, 18], [18, 19], [19, 20]];
+const LINK = [[5, 9], [9, 13], [13, 17]], PALMPOLY = [0, 1, 5, 9, 13, 17];
+const KNOB = (() => { const k = new Float32Array(21); k[0] = .075; k[1] = .05; k[2] = .045; k[3] = .038; for (const f of [5, 9, 13, 17]) { k[f] = .052; k[f + 1] = .042; k[f + 2] = .034; } return k; })();
 
 export class Renderer {
   mirrored = true; style = 0; fx = { glow: true, trail: true, text: true, lasers: true };
@@ -10,63 +19,81 @@ export class Renderer {
   resize(w, h) { if (this.c.width !== w || this.c.height !== h) { this.c.width = w; this.c.height = h; } }
   clear() { this.g.clearRect(0, 0, this.c.width, this.c.height); }
 
-  layers(path, col, w, al, glow = 1) {
-    const g = this.g, st = path ? () => g.stroke(path) : () => g.stroke();   // path rỗng = stroke đường đang dựng trên ctx (không cấp phát Path2D)
-    g.strokeStyle = col;
-    if (glow && this.fx.glow) { g.globalAlpha = al * .14; g.lineWidth = w * 4.2; st(); g.globalAlpha = al * .4; g.lineWidth = w * 2; st(); }
-    g.globalAlpha = al * .95; g.lineWidth = w * .75; g.strokeStyle = glow ? "#fff" : col; st();
-  }
-
-  capsule(x1, y1, x2, y2, r1, r2, col, al) {              // xương thon dần — ôm sát hình ngón tay
-    const g = this.g, an = Math.atan2(y2 - y1, x2 - x1) + 1.5708, c = Math.cos(an), s = Math.sin(an);
-    g.globalAlpha = al * .88; g.fillStyle = col; g.beginPath();
-    g.moveTo(x1 + c * r1, y1 + s * r1); g.lineTo(x2 + c * r2, y2 + s * r2); g.lineTo(x2 - c * r2, y2 - s * r2); g.lineTo(x1 - c * r1, y1 - s * r1); g.closePath();
-    g.moveTo(x1 + r1, y1); g.arc(x1, y1, r1, 0, TAU); g.moveTo(x2 + r2, y2); g.arc(x2, y2, r2, 0, TAU); g.fill();
-    g.globalAlpha = al * .5; g.strokeStyle = "#fff"; g.lineWidth = Math.max(1, r2 * .5); g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke();
+  layers(col, w, al, glow = 1) {                                   // stroke đường đang dựng trên ctx (nhiều lớp glow)
+    const g = this.g; g.strokeStyle = col;
+    if (glow && this.fx.glow) { g.globalAlpha = al * .14; g.lineWidth = w * 4.2; g.stroke(); g.globalAlpha = al * .4; g.lineWidth = w * 2; g.stroke(); }
+    g.globalAlpha = al * .95; g.lineWidth = w * .75; g.strokeStyle = glow ? "#fff" : col; g.stroke();
   }
 
   hand(s, conn, label, now = performance.now()) {
     if (this.fx.trail) this.trail(s, now); if (s.alpha < .02) return;
-    const g = this.g, W = this.c.width, H = this.c.height, d = s.d, st = this.style, al = s.alpha;
-    const px = (i) => d[i * 2] * W, py = (i) => d[i * 2 + 1] * H;
-    const size = Math.hypot(px(0) - px(9), py(0) - py(9)), w = Math.max(2, size * .035);
+    const g = this.g, W = this.c.width, H = this.c.height, d = s.d, al = s.alpha;
+    const size = Math.hypot((d[0] - d[18]) * W, (d[1] - d[19]) * H);   // wrist → MCP giữa (landmark 9)
     g.lineCap = g.lineJoin = "round";
-    const rad = (i) => size * (i === 0 ? .1 : .075 - .011 * ((i - 1) % 4));
-
-    if (st === 1) for (const { start: a, end: b } of conn) this.capsule(px(a), py(a), px(b), py(b), rad(a), rad(b), FINGER[grp(a, b)], al);
-    else {
-      if (st === 3) {                                       // HOLO: lòng bàn tay trong suốt + nét đứt
-        g.globalAlpha = al * .14; g.fillStyle = HEAD; g.beginPath();
-        [0, 1, 5, 9, 13, 17].forEach((i, k) => k ? g.lineTo(px(i), py(i)) : g.moveTo(px(i), py(i))); g.fill();
-        g.setLineDash([size * .07, size * .05]);
-      }
-      for (let i = 0; i < 6; i++) {                           // mỗi nhóm ngón: dựng đường trực tiếp trên ctx rồi stroke nhiều lớp
-        g.beginPath(); for (const { start: a, end: b } of conn) if (grp(a, b) === i) { g.moveTo(px(a), py(a)); g.lineTo(px(b), py(b)); }
-        this.layers(null, FINGER[i], st === 2 ? Math.max(1.2, size * .016) : w, al, st === 2 ? 0 : 1);
-      }
-      g.setLineDash([]);
-    }
-    for (let i = 0; i < 21; i++) {                          // khớp: hình khác nhau theo phong cách
-      const tip = TIPK[i] >= 0, x = px(i), y = py(i), col = tip ? FINGER[TIPK[i]] : "#fff";
-      const r = st === 1 ? rad(i) * .5 : size * (tip ? .045 : .028);
-      g.globalAlpha = al; g.fillStyle = col; g.strokeStyle = col; g.lineWidth = Math.max(1.2, size * .012);
-      g.beginPath();
-      if (st === 2) { g.moveTo(x, y - r * 1.3); g.lineTo(x + r * 1.3, y); g.lineTo(x, y + r * 1.3); g.lineTo(x - r * 1.3, y); g.closePath(); g.fill(); }
-      else if (st === 3) { g.arc(x, y, r * 1.2, 0, TAU); tip ? g.fill() : g.stroke(); }
-      else { g.arc(x, y, r, 0, TAU); g.fill(); if (tip || st === 1) { g.fillStyle = "#fff"; g.beginPath(); g.arc(x, y, r * .45, 0, TAU); g.fill(); } }
-    }
+    if (this.style === 0) this.bones(d, size, al, W, H); else this.lines(d, conn, size, al, W, H, this.style);
+    this.tips(s, size, al, W, H, now);
     if (this.fx.trail) this.drawTrail(s, size, now);
-    if (this.fx.text) this.tag(label, px(12), Math.min(py(8), py(12), py(16)) - size * .35, "#fff", al, size);
+    if (this.fx.text) this.tag(label, d[24] * W, Math.min(d[17], d[25], d[33]) * H - size * .55, "#fff", al, size);
   }
 
-  lasers(a, b) {                                            // tia sáng giữa đầu ngón hai tay (ý tưởng từ web-ar-hand-tracking)
+  // ---- XƯƠNG ----
+  bonePass(d, W, H, list, w, al, glow) {
+    const g = this.g; g.beginPath();
+    for (let i = 0; i < list.length; i++) { const a = list[i][0], b = list[i][1]; g.moveTo(d[a * 2] * W, d[a * 2 + 1] * H); g.lineTo(d[b * 2] * W, d[b * 2 + 1] * H); }
+    if (glow) { g.globalAlpha = al * .16; g.strokeStyle = ACC; g.lineWidth = w * 3.4; g.stroke(); }
+    g.globalAlpha = al * .62; g.strokeStyle = INK; g.lineWidth = w * 1.8; g.stroke();   // viền tối → nổi trên video
+    g.globalAlpha = al; g.strokeStyle = BONE; g.lineWidth = w * .85; g.stroke();         // thân xương
+  }
+  bones(d, size, al, W, H) {
+    const g = this.g, w = Math.max(2.2, size * .05), glow = this.fx.glow;
+    g.beginPath(); for (let k = 0; k < PALMPOLY.length; k++) { const i = PALMPOLY[k]; k ? g.lineTo(d[i * 2] * W, d[i * 2 + 1] * H) : g.moveTo(d[i * 2] * W, d[i * 2 + 1] * H); } g.closePath();
+    g.globalAlpha = al * .13; g.fillStyle = ACC; g.fill(); g.globalAlpha = al * .35; g.strokeStyle = ACC; g.lineWidth = Math.max(1, w * .3); g.stroke();   // mô lòng bàn tay
+    this.bonePass(d, W, H, META, w * 1.25, al, glow); this.bonePass(d, W, H, PHAL, w * .85, al, glow);
+    g.beginPath(); for (let i = 0; i < 3; i++) { const a = LINK[i][0], b = LINK[i][1]; g.moveTo(d[a * 2] * W, d[a * 2 + 1] * H); g.lineTo(d[b * 2] * W, d[b * 2 + 1] * H); }
+    g.globalAlpha = al * .5; g.strokeStyle = BONE; g.lineWidth = Math.max(1, w * .35); g.stroke();                                                       // gân nối đầu xương bàn
+    g.beginPath(); for (let i = 0; i < 21; i++) if (TIPK[i] < 0) { const r = size * KNOB[i], x = d[i * 2] * W, y = d[i * 2 + 1] * H; g.moveTo(x + r, y); g.arc(x, y, r, 0, TAU); }
+    g.globalAlpha = al; g.fillStyle = BONE; g.fill(); g.globalAlpha = al * .8; g.strokeStyle = INK; g.lineWidth = Math.max(1, size * .014); g.stroke();   // khớp
+  }
+
+  // ---- NEON / WIRE / HOLO (đường nối kiểu cũ, đầu ngón vẽ bằng tips()) ----
+  lines(d, conn, size, al, W, H, st) {
+    const g = this.g, w = Math.max(2, size * .035);
+    if (st === 3) { g.globalAlpha = al * .14; g.fillStyle = ACC; g.beginPath(); for (let k = 0; k < PALMPOLY.length; k++) { const i = PALMPOLY[k]; k ? g.lineTo(d[i * 2] * W, d[i * 2 + 1] * H) : g.moveTo(d[i * 2] * W, d[i * 2 + 1] * H); } g.fill(); g.setLineDash([size * .07, size * .05]); }
+    for (let i = 0; i < 6; i++) {
+      g.beginPath(); for (const { start: a, end: b } of conn) if (grp(a, b) === i) { g.moveTo(d[a * 2] * W, d[a * 2 + 1] * H); g.lineTo(d[b * 2] * W, d[b * 2 + 1] * H); }
+      this.layers(FINGER[i], st === 2 ? Math.max(1.2, size * .016) : w, al, st === 2 ? 0 : 1);
+    }
+    g.setLineDash([]);
+    for (let i = 0; i < 21; i++) if (TIPK[i] < 0) {
+      const x = d[i * 2] * W, y = d[i * 2 + 1] * H, r = size * .028; g.globalAlpha = al; g.fillStyle = g.strokeStyle = "#fff"; g.lineWidth = Math.max(1.2, size * .012); g.beginPath();
+      if (st === 2) { g.moveTo(x, y - r * 1.3); g.lineTo(x + r * 1.3, y); g.lineTo(x, y + r * 1.3); g.lineTo(x - r * 1.3, y); g.closePath(); g.fill(); }
+      else if (st === 3) { g.arc(x, y, r * 1.2, 0, TAU); g.stroke(); } else { g.arc(x, y, r, 0, TAU); g.fill(); }
+    }
+  }
+
+  // ---- ĐẦU NGÓN: vòng tròn tương tác (dùng chung mọi phong cách) ----
+  tips(s, size, al, W, H, now) {
+    const g = this.g, d = s.d, ui = s.ui, base = Math.max(6, size * .085), lw = Math.max(2, size * .022);
+    for (let k = 0; k < 5; k++) {
+      const i = TIPS[k], x = d[i * 2] * W, y = d[i * 2 + 1] * H, hov = ui ? ui.hov[k] : 0, pr = ui ? ui.prog[k] : 0, r = base * (hov ? 1.3 : 1);
+      g.beginPath(); g.arc(x, y, r, 0, TAU);
+      g.globalAlpha = al * (hov ? .45 : .26); g.fillStyle = FINGER[k]; g.fill();                      // nền mờ
+      g.globalAlpha = al; g.strokeStyle = hov ? "#fff" : FINGER[k]; g.lineWidth = hov ? lw * 1.3 : lw; g.stroke();   // viền
+      g.fillStyle = "#fff"; g.beginPath(); g.arc(x, y, r * .3, 0, TAU); g.fill();                     // chấm tâm
+      if (pr > 0) { g.strokeStyle = "#fff"; g.lineWidth = Math.max(3, size * .035); g.beginPath(); g.arc(x, y, r + size * .04, -1.5708, -1.5708 + TAU * pr); g.stroke(); }   // vòng tiến trình giữ yên
+    }
+    if (ui && now - ui.flash < 320) {                                                                 // gợn sóng khi vừa bấm
+      const f = (now - ui.flash) / 320; g.strokeStyle = "#00f5a0"; g.lineWidth = Math.max(2, size * .03) * (1 - f); g.globalAlpha = al * (1 - f);
+      for (let k = 0; k < 5; k++) if (ui.hov[k] || k < 2) { g.beginPath(); g.arc(d[TIPS[k] * 2] * W, d[TIPS[k] * 2 + 1] * H, base * (1.4 + f * 2.2), 0, TAU); g.stroke(); }
+    }
+    g.globalAlpha = 1;
+  }
+
+  lasers(a, b) {                                                   // tia sáng giữa đầu ngón hai tay
     if (!this.fx.lasers) return;
     const al = Math.min(a.alpha, b.alpha); if (al < .05) return;
     const g = this.g, W = this.c.width, H = this.c.height; g.lineCap = "round";
-    TIPS.forEach((i, k) => {
-      g.beginPath(); g.moveTo(a.d[i * 2] * W, a.d[i * 2 + 1] * H); g.lineTo(b.d[i * 2] * W, b.d[i * 2 + 1] * H);
-      this.layers(null, FINGER[k], Math.max(1.5, W / 520), al * .35);
-    });
+    TIPS.forEach((i, k) => { g.beginPath(); g.moveTo(a.d[i * 2] * W, a.d[i * 2 + 1] * H); g.lineTo(b.d[i * 2] * W, b.d[i * 2 + 1] * H); this.layers(FINGER[k], Math.max(1.5, W / 520), al * .35); });
     g.globalAlpha = 1;
   }
 
@@ -85,28 +112,6 @@ export class Renderer {
       g.beginPath(); g.moveTo(t.p[j0 * 10 + k * 2] * W, t.p[j0 * 10 + k * 2 + 1] * H); g.lineTo(t.p[j * 10 + k * 2] * W, t.p[j * 10 + k * 2 + 1] * H); g.stroke();
     }
     g.globalAlpha = 1;
-  }
-
-  head(s, eng) {
-    if (s.alpha < .02) return;
-    const g = this.g, W = this.c.width, H = this.c.height, d = s.d, st = this.style, al = s.alpha;
-    const seg = (list, p = new Path2D()) => { for (const { start: a, end: b } of list) { p.moveTo(d[a * 2] * W, d[a * 2 + 1] * H); p.lineTo(d[b * 2] * W, d[b * 2 + 1] * H); } return p; };
-    let x0 = 1, y0 = 1, x1 = 0, y1 = 0;
-    for (let i = 0; i < 478; i++) { const x = d[i * 2], y = d[i * 2 + 1]; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
-    const size = (y1 - y0) * H, w = Math.max(1.6, size * .008); g.lineCap = g.lineJoin = "round";
-    const contour = seg(eng.faceConn);
-    if (st === 1 && eng.faceOval) { g.globalAlpha = al * .12; g.fillStyle = HEAD; g.fill(seg(eng.faceOval)); }
-    if (st === 2 && eng.faceMesh) { g.globalAlpha = al * .32; g.strokeStyle = HEAD; g.lineWidth = Math.max(.8, w * .45); g.stroke(seg(eng.faceMesh)); }
-    if (st === 3) g.setLineDash([size * .02, size * .015]);
-    this.layers(contour, HEAD, st === 1 ? w * 1.5 : w, al, st === 2 ? 0 : 1); g.setLineDash([]);
-    const dots = new Path2D(), r = st === 3 ? w * .8 : w * 1.4;
-    if (st === 3) for (let i = 0; i < 478; i += 2) { dots.moveTo(d[i * 2] * W + r, d[i * 2 + 1] * H); dots.arc(d[i * 2] * W, d[i * 2 + 1] * H, r, 0, TAU); }
-    else { this._dots ??= [...new Set(eng.faceConn.map((c) => c.start))]; for (const a of this._dots) { dots.moveTo(d[a * 2] * W + r, d[a * 2 + 1] * H); dots.arc(d[a * 2] * W, d[a * 2 + 1] * H, r, 0, TAU); } }
-    g.globalAlpha = al * .85; g.fillStyle = "#fff"; g.fill(dots);
-    const m = size * .08, L = size * .12, X0 = x0 * W - m, Y0 = y0 * H - m, X1 = x1 * W + m, Y1 = y1 * H + m, br = new Path2D();
-    for (const [x, y, sx, sy] of [[X0, Y0, 1, 1], [X1, Y0, -1, 1], [X0, Y1, 1, -1], [X1, Y1, -1, -1]]) { br.moveTo(x + sx * L, y); br.lineTo(x, y); br.lineTo(x, y + sy * L); }
-    g.globalAlpha = al * .9; g.strokeStyle = HEAD; g.lineWidth = w * 1.6; g.stroke(br);
-    if (this.fx.text) this.tag("HEAD", (X0 + X1) / 2, Y0 - size * .07, HEAD, al, size * .6); g.globalAlpha = 1;
   }
 
   tag(text, x, y, col, alpha, size) {

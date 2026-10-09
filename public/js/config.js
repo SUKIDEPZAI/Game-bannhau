@@ -4,16 +4,16 @@ const MANUAL = "https://game-bannhau.onrender.com";   // không có "/" ở cu�
 const loc = globalThis.location, host = loc?.hostname || "";   // an toàn khi import ngoài trình duyệt (test Node)
 export const RENDER_URL = loc && (host.endsWith("onrender.com") || host === "localhost" || host === "127.0.0.1") ? loc.origin : MANUAL;
 
-// 2) Profile: cam [rộng, cao, fps] · faceFps = tần số face (0 = tắt) · fx = hiệu ứng vẽ · predict = "video" (bám khung đang hiển thị) | "world"
+// 2) Profile (v14: KHÔNG còn skeleton đầu → faceFps luôn 0; style 0 = XƯƠNG mới): cam [rộng, cao, fps] · faceFps = tần số face (0 = tắt) · fx = hiệu ứng vẽ · predict = "video" (bám khung đang hiển thị) | "world"
 export const PROFILES = {
   ULTRA:    { cam: [640, 360, 60],  faceFps: 0,  style: 2, fx: { glow: false, trail: false, text: false, lasers: false }, predict: "video" },
-  BALANCED: { cam: [960, 540, 60],  faceFps: 12, style: 0, fx: { glow: true,  trail: false, text: true,  lasers: false }, predict: "video" },
-  QUALITY:  { cam: [1280, 720, 30], faceFps: 24, style: 0, fx: { glow: true,  trail: true,  text: true,  lasers: true  }, predict: "video" }
+  BALANCED: { cam: [960, 540, 60],  faceFps: 0,  style: 0, fx: { glow: true,  trail: false, text: true,  lasers: false }, predict: "video" },
+  QUALITY:  { cam: [1280, 720, 30], faceFps: 0,  style: 0, fx: { glow: true,  trail: true,  text: true,  lasers: true  }, predict: "video" }
 };
 
 // 3) Bộ lọc/dự đoán (đơn vị: toạ độ chuẩn hoá 0..1, giây). Nguồn: One Euro (Casiez 2012) + benchmark test/bench.js
 export const FILTER = {
-  hand: { minCutoff: 2.2, beta: 60, dCutoff: 6, tau: 0.006 },   // minCutoff↓ = hết rung khi đứng yên; beta↑ = bớt trễ khi nhanh
+  hand: { minCutoff: 1.6, beta: 40, dCutoff: 9, tau: 0.006 },   // chọn bằng test/sweep.js (Pareto): trội hơn 2.2/60/6 ở cả jitter lẫn lag. minCutoff↓ = êm hơn khi đứng yên; beta↑ = bớt trễ khi nhanh
   face: { minCutoff: 1.6, beta: 30, dCutoff: 5, tau: 0.012 },
   maxHorizon: 0.05,        // MAX_PREDICTION_HORIZON (s): không bao giờ dự đoán quá 50 ms
   gapMs: 250,              // khoảng trống > ngưỡng này = tái bắt (reacquire): bỏ vận tốc, sửa vị trí có giới hạn
@@ -40,5 +40,18 @@ export const GESTURE = {
 };
 
 // 6) Lập lịch khung + telemetry + bộ điều khiển hiệu năng
-export const SCHED = { staleMs: 200, useCaptureTime: true };     // bỏ kết quả cũ hơn staleMs; dùng captureTime của rVFC cho dt nếu có
-export const PERF = { evalMs: 500, degradeAfterMs: 1500, recoverAfterMs: 6000, cooldownMs: 4000, aiP95Budget: 22, ageP95Budget: 70, renderP95Budget: 6 };
+export const SCHED = { staleMs: 250, useCaptureTime: true };     // bỏ kết quả có THỜI GIAN CHỜ (không tính thời gian AI) > staleMs; dùng captureTime của rVFC cho dt nếu có
+export const PERF = { evalMs: 500, degradeAfterMs: 1500, recoverAfterMs: 6000, cooldownMs: 4000, aiP95Budget: 22, ageP95Budget: 100, warmupMs: 3000, renderP95Budget: 6 };
+
+// 7) Tương tác đầu ngón tay ↔ nút trên màn hình (xem interact.js)
+export const INTERACT = {
+  enabled: true,
+  selector: "button",          // phần tử có thể chạm
+  dwellMs: 700,                // giữ yên đầu ngón (đang CHỈ TAY) để bấm
+  maxSpeedPx: 450,             // tốc độ tối đa (px/s) để tính giờ giữ — quét nhanh qua nút thì không bấm
+  cooldownMs: 900,             // chống bấm lặp trên cùng một nút
+  slopPx: 10,                  // nới vùng chạm quanh nút
+  pinchClick: true,            // chụm ngón cái + trỏ = bấm ngay
+  dwellAllTips: false,         // true = cả bàn tay xòe cũng bấm được bằng giữ yên (dễ bấm nhầm)
+  rescanMs: 400                // quét lại vị trí nút
+};
