@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <meta name="theme-color" content="#05070a">
-<title>AI Pose Camera — Hand &amp; Head Skeleton v5</title>
+<title>AI Hand Skeleton v14 — xương bàn tay &amp; chạm nút bằng đầu ngón</title>
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -15,13 +15,13 @@
   <pre id="tele" class="tele"></pre>
 
   <div class="top">
-    <div class="brand glass">HAND <span>·</span> HEAD v5</div>
+    <div class="brand glass">HAND <span>·</span> BONE v14</div>
     <div class="row-btn">
       <button id="snapBtn" title="Chụp ảnh (S)">📸</button>
       <button id="handBtn" title="Bật/tắt skeleton tay (H)">✋</button>
       <button id="profBtn" title="Profile ULTRA/BALANCED/QUALITY (P)">⚡</button>
       <button id="styleBtn" title="Đổi phong cách skeleton (V)">🎨</button>
-      <button id="headBtn" title="Bật/tắt skeleton đầu (E)">🙂</button>
+      <button id="uiBtn" title="Bật/tắt chạm nút bằng đầu ngón tay (I)">👆</button>
       <button id="switchBtn" title="Đổi camera (C)">↔</button>
       <button id="fullBtn" title="Toàn màn hình (F)">⛶</button>
     </div>
@@ -32,9 +32,8 @@
       <div class="pill glass">FPS <b id="fps">0</b></div>
       <div class="pill glass">AI <b id="lat">--</b></div>
       <div class="pill glass">✋ <b id="hands">0</b></div>
-      <div class="pill glass">🙂 <b id="head">—</b></div>
       <div class="pill glass">⚡ <b id="gest">—</b></div>
-      <div class="pill glass">🎨 <b id="style">NEON</b></div>
+      <div class="pill glass">🎨 <b id="style">XƯƠNG</b></div>
       <div class="pill glass">BÙ TRỄ <b id="lead">--</b></div>
       <div class="pill glass">⚡ <b id="prof">BALANCED</b></div>
       <div class="pill glass">PING <b id="ping">--</b></div>
@@ -49,7 +48,7 @@
   <div id="welcome" class="center">
     <div class="dialog">
       <h1>AI Pose Camera</h1>
-      <p>Skeleton neon 21 điểm cho từng ngón tay và đường viền đầu/mặt, nhận diện cử chỉ theo thời gian thực.</p>
+      <p>Skeleton bàn tay dạng xương (21 điểm) với vòng tròn ở đầu mỗi ngón. <b>Chạm nút bằng đầu ngón</b>: chỉ tay giữ yên ~0.7 s, hoặc chụm ngón cái + trỏ để bấm.</p>
       <div class="btns"><button id="startMain" class="primary">📷 Bắt đầu</button><button id="fullMain">⛶ Fullscreen</button></div>
       <p style="margin:12px 0 0;font-size:11px">Video xử lý hoàn toàn trên thiết bị bằng MediaPipe, không gửi lên server.</p>
     </div>
