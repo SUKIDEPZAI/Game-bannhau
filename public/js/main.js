@@ -1,22 +1,22 @@
 import { InferenceClient, MainThreadAI, pickSources } from "./inference.js";
 import { SmoothSet } from "./smoothing.js";
-import { gesture } from "./gesture.js";
+import { GestureTracker, SwipeDetector } from "./gesture.js";
 import { Renderer, STYLES } from "./renderer.js";
-import { RENDER_URL } from "./config.js";
+import { RENDER_URL, PROFILES, FILTER, TRACK, SCHED, PERF } from "./config.js";
+import { Metric, fmtP, Recorder } from "./telemetry.js";
+import { PerfController } from "./perf.js";
+import { pickAssignment } from "./tracking.js";
 
-// ===== 3 profile: cấu hình duy nhất quyết định camera / face / hiệu ứng / kiểu dự đoán =====
-const PROFILES = {
-  ULTRA:    { cam: [640, 360, 60],  face: 0, style: 2, fx: { glow: false, trail: false, text: false, lasers: false }, predict: "video" },
-  BALANCED: { cam: [960, 540, 60],  face: 4, style: 0, fx: { glow: true,  trail: false, text: true,  lasers: false }, predict: "video" },
-  QUALITY:  { cam: [1280, 720, 30], face: 2, style: 0, fx: { glow: true,  trail: true,  text: true,  lasers: true  }, predict: "video" }
-};
 const $ = (id) => document.getElementById(id), setText = (id, t) => { const e = $(id); if (e) e.textContent = t; };
 const video = $("video"), canvas = $("overlay"), stage = $("stage"), rend = new Renderer(canvas);
-const slots = [0, 1].map(() => ({ set: new SmoothSet(21, { minCutoff: 2.2, beta: 60, tau: 0.006 }), label: "" }));
-const face = new SmoothSet(478, { minCutoff: 1.6, beta: 30, dCutoff: 5, tau: 0.012 });
+const common = { maxH: FILTER.maxHorizon, gapMs: FILTER.gapMs, reacqMs: FILTER.reacqRampMs, soft: FILTER.outlierSoft, hard: FILTER.outlierHard };
+const slots = [0, 1].map(() => ({ set: new SmoothSet(21, { ...FILTER.hand, ...common }), label: "", g: new GestureTracker(), sw: new SwipeDetector(), swipe: "", swipeT: -1e9 }));
+const face = new SmoothSet(478, { ...FILTER.face, ...common });
+const M = Object.fromEntries(["ai", "age", "render", "xfer", "cap", "xout", "wq", "back", "gest"].map((k) => [k, new Metric()]));
+const rec = new Recorder(), perf = new PerfController(PERF); let perfT = 0, lastFaceT = 0, lastSubmitPf = -1, fm = { now: 0, cap: 0, pf: 0 };
 let ai = null, pname = "BALANCED", P = PROFILES[pname], stream = null, running = false, facing = "user", frameNo = 0, lastRaf = 0, camLag = 25;
 const show = { hands: true, head: true };
-const T = { cam: 0, infer: 0, th: 0, tf: 0, rtt: 0, filter: 0, render: 0, age: 0, camFps: 0, aiFps: 0, dispFps: 0, dropped: 0, res: "—" };
+const T = { stale: 0, cam: 0, infer: 0, th: 0, tf: 0, rtt: 0, filter: 0, render: 0, age: 0, camFps: 0, aiFps: 0, dispFps: 0, dropped: 0, res: "—" };
 const cnt = { cam: 0, ai: 0, disp: 0 }; let cntT = performance.now(), hudT = 0, noDet = 0;
 const ema = (cur, v, k = 0.2) => cur + (v - cur) * k;
 
@@ -30,12 +30,12 @@ async function ensureModel() {
   setText("modelState", "LOAD"); showError("Đang tải AI…", 0);
   try {
     const src = await pickSources(); const c = new InferenceClient();
-    await c.init({ ...src, face: PROFILES[pname].face > 0 }); ai = c;
+    await c.init({ ...src, face: PROFILES[pname].faceFps > 0 }); ai = c;
   } catch (e) {
     console.warn("Worker lỗi → chạy main thread:", e);
     try { const m = new MainThreadAI(); await m.init(); ai = m; } catch (e2) { setText("modelState", "ERR"); showError("Không tải được AI: " + (e2.message || e2)); return false; }
   }
-  ai.onResult = onResult; setText("modelState", `${ai.kind}/${ai.delegate}`); $("error").classList.add("hidden"); return true;
+  ai.onResult = onResult; ai.onIdle = kick; setText("modelState", `${ai.kind}/${ai.delegate}`); $("error").classList.add("hidden"); return true;
 }
 
 async function startCamera() {
@@ -52,40 +52,55 @@ async function startCamera() {
 }
 function stopCamera() { running = false; stream?.getTracks().forEach((t) => t.stop()); stream = null; rend.clear(); setBtn(false); $("welcome").classList.remove("hidden"); }
 
-// Mỗi khung camera mới: đo tuổi khung, nếu AI đang bận thì BỎ (latest-frame-wins), ngược lại gửi ngay khung mới nhất.
+// LATEST-FRAME-WINS: worker chỉ giữ 1 khung. Khung đến khi bận KHÔNG xếp hàng; khi worker xong (onIdle) ta chụp ngay khung MỚI NHẤT đang hiển thị
+// (không chờ khung kế → bớt ~½ chu kỳ camera). presentedFrames dùng để không xử lý lại cùng một khung.
 function onFrame(now, meta) {
   if (!running) return;
   video.requestVideoFrameCallback(onFrame); cnt.cam++;
-  if (meta.captureTime) {                                          // ĐO THẬT: tuổi khung lúc callback; ƯỚC LƯỢNG: capture→hiển thị
+  const hasCap = meta.captureTime && Math.abs(meta.captureTime - now) < 500;
+  if (hasCap) {                                                    // ĐO THẬT: tuổi khung lúc callback; ƯỚC LƯỢNG: capture→hiển thị
     T.cam = ema(T.cam, now - meta.captureTime);
     if (meta.expectedDisplayTime) camLag = ema(camLag, meta.expectedDisplayTime - meta.captureTime);
   }
-  if (!ai?.ready || document.hidden) return;
-  if (ai.busy) { T.dropped++; return; }
-  frameNo++; rend.resize(video.videoWidth, video.videoHeight);
-  ai.submit(video, performance.now(), { hands: show.hands, face: show.head && P.face > 0 && frameNo % P.face === 0 });
+  fm.now = now; fm.pf = meta.presentedFrames; fm.cap = SCHED.useCaptureTime && hasCap ? meta.captureTime : now;
+  if (ai?.busy) T.dropped++; kick();
+}
+function kick() {
+  if (!running || !ai?.ready || document.hidden || ai.busy || fm.pf === lastSubmitPf) return;
+  lastSubmitPf = fm.pf; frameNo++; rend.resize(video.videoWidth, video.videoHeight);
+  const fps = P.faceFps * perf.faceScale, wantFace = show.head && fps > 0 && fm.now - lastFaceT >= 1000 / fps;   // face theo THỜI GIAN, hạ trước khi hạ tay
+  if (wantFace) lastFaceT = fm.now;
+  ai.submit(video, fm.now, { hands: show.hands, face: wantFace }, fm.cap);
 }
 
 function onResult(m) {
-  cnt.ai++; const t0 = performance.now();
-  T.infer = ema(T.infer, m.tAll); T.th = ema(T.th, m.tHand); if (m.tFace) T.tf = ema(T.tf, m.tFace);
-  T.rtt = ema(T.rtt, t0 - m.ts);                                   // gửi → nhận (gồm AI + truyền)
+  cnt.ai++; const t0 = performance.now(); rec.push(m);
+  if (m.faceOnly) { if (m.tFace) T.tf = ema(T.tf, m.tFace); if (m.face) { if (face.miss >= 8) face.reset(); face.pushPacked(m.face, 0, m.ts, m.ts); noDet = 0; } else face.miss++; return; }
+  if (t0 - m.ts > SCHED.staleMs) { T.stale++; return; }            // khung quá cũ: bỏ, không dùng dự đoán để che
+  T.infer = ema(T.infer, m.tAll); T.th = ema(T.th, m.tHand); M.ai.push(m.tAll);
+  T.rtt = ema(T.rtt, t0 - m.ts); M.xfer.push(Math.max(0, t0 - m.ts - m.tAll));
+  if (m.tRecv && ai.tPost) { M.cap.push(ai.cap); M.xout.push(Math.max(0, m.tRecv - ai.tPost)); M.wq.push(Math.max(0, m.tH0 - m.tRecv)); M.back.push(Math.max(0, m.tRes - m.tSend)); }
   assign(m);
-  if (m.face) { if (face.miss >= 8) face.reset(); face.pushPacked(m.face, 0, m.ts); } else if (m.faceRan) face.miss++;
-  noDet = m.nh || m.face ? 0 : noDet + 1;
-  T.filter = ema(T.filter, performance.now() - t0);
+  noDet = m.nh ? 0 : noDet + 1;
+  const dt = performance.now() - t0; T.filter = ema(T.filter, dt); M.gest.push(dt);
 }
 
-// Gán tay → slot bằng phép ghép tối ưu 2×2 dùng vị trí cổ tay DỰ ĐOÁN (tránh hoán đổi trái/phải khi hai tay giao nhau).
+// Gán tay → slot: chi phí = khoảng cách tới vị trí DỰ ĐOÁN theo thời gian thực trôi qua, chuẩn hoá theo kích thước tay (có aspect) + lệch kích thước;
+// có GATING (quá xa → coi là tay mới, không cướp danh tính). 2 tay: xét cả hai phép gán, chọn tổng nhỏ nhất.
 function assign(m) {
   const aspect = video.videoWidth / video.videoHeight || 1, H = m.hands, dets = [];
-  for (let k = 0; k < m.nh; k++) { const o = k * 63; if (Math.hypot(H[o] - H[o + 27], H[o + 1] - H[o + 28]) >= 0.02) dets.push(o); }
-  const cost = (o, s) => { const st = s.set; return st.has && st.miss < 8 ? Math.hypot(H[o] - (st.x[0] + st.v[0] * 0.05), H[o + 1] - (st.x[1] + st.v[1] * 0.05)) : 0.5; };
-  let pick = [];
-  if (dets.length === 1) pick = [cost(dets[0], slots[0]) <= cost(dets[0], slots[1]) ? 0 : 1];
-  else if (dets.length >= 2) pick = cost(dets[0], slots[0]) + cost(dets[1], slots[1]) <= cost(dets[0], slots[1]) + cost(dets[1], slots[0]) ? [0, 1] : [1, 0];
+  for (let k = 0; k < m.nh; k++) { const o = k * 63; if (Math.hypot((H[o] - H[o + 27]) * aspect, H[o + 1] - H[o + 28]) >= TRACK.minHandSize) dets.push(o); }
+  const pick = pickAssignment(dets, H, slots.map((s) => s.set), aspect, m.tc, TRACK);
   const used = new Set();
-  dets.slice(0, 2).forEach((o, i) => { const s = slots[pick[i]]; used.add(pick[i]); if (s.set.miss >= 8) s.set.reset(); s.set.pushPacked(H, o, m.ts); s.label = gesture(s.set, aspect); });
+  dets.slice(0, 2).forEach((o, i) => {
+    const s = slots[pick[i]]; used.add(pick[i]);
+    if ((m.tc - s.set.last) > FILTER.gapMs) { s.g.reset(); s.sw.reset(); }
+    s.set.pushPacked(H, o, m.tc, m.ts);
+    const st = s.set, sp = Math.hypot(st.pv[0], st.pv[1]) / Math.max(st.scale, 0.03), ok = st.pe < 0.3 && st.reacq < 0.5;
+    s.label = s.g.update(st, aspect, m.tc, sp, ok);
+    let px = 0, py = 0; for (const a of [0, 5, 9, 13, 17]) { px += st.x[a * 2]; py += st.x[a * 2 + 1]; }
+    const sw = s.sw.push(m.tc, px / 5, py / 5, Math.max(st.scale, 0.03)); if (sw) { s.swipe = rend.mirrored ? ({ L: "R", R: "L" }[sw] || sw) : sw; s.swipeT = performance.now(); }
+  });
   slots.forEach((s, i) => { if (!used.has(i)) s.set.miss++; });
 }
 
@@ -97,41 +112,47 @@ function loop(raf) {
   const lead = (P.predict === "world" ? camLag / 1000 : 0) + 0.004;   // "video": bám khung hình đang hiển thị; "world": bám tay thật (dễ lệch trước video)
   let hands = 0;
   for (const s of slots) {
-    const vis = show.hands && s.set.has && s.set.miss < 5; if (vis) hands++;
-    s.set.lead = lead; s.set.step(dt, vis, now); rend.hand(s.set, ai?.handConn || [], s.label);
+    const vis = show.hands && s.set.has && s.set.miss < TRACK.lostHideMiss; if (vis) hands++;
+    s.set.lead = lead; s.set.step(dt, vis, now); rend.hand(s.set, ai?.handConn || [], s.label, now);
   }
   if (hands === 2) rend.lasers(slots[0].set, slots[1].set);
-  if (P.face > 0 && ai?.ready) { face.lead = lead; face.step(dt, show.head && face.has && face.miss < 6, now); rend.head(face, ai); }
-  T.render = ema(T.render, performance.now() - r0);
-  T.age = ema(T.age, now - Math.max(slots[0].set.last, slots[1].set.last));
+  if (P.faceFps > 0 && perf.faceScale > 0 && ai?.ready) { face.lead = lead; face.step(dt, show.head && face.has && face.miss < 6, now); rend.head(face, ai); }
+  const rt = performance.now() - r0; T.render = ema(T.render, rt); M.render.push(rt);
+  T.age = ema(T.age, now - Math.max(slots[0].set.tAge, slots[1].set.tAge)); M.age.push(T.age);
+  if (now - perfT > PERF.evalMs) { perfT = now; const lv = perf.update(now, { aiP95: M.ai.stats().p95, ageP95: M.age.stats().p95, renderP95: M.render.stats().p95 }); if (lv !== null) applyPerf(); }
   if (now - hudT > 250) hud(now, hands);
 }
 
+function applyPerf() {
+  Object.assign(rend.fx, P.fx); if (perf.fxOff) Object.assign(rend.fx, { glow: false, trail: false, text: false, lasers: false });
+  if (perf.faceScale === 0) { face.reset(); face.miss = 99; } setText("prof", pname + (perf.level ? ` ↓${perf.level}` : ""));
+}
 function hud(now, hands) {
   const dtc = (now - cntT) / 1000; cntT = now; hudT = now;
   T.camFps = cnt.cam / dtc; T.aiFps = cnt.ai / dtc; T.dispFps = cnt.disp / dtc; cnt.cam = cnt.ai = cnt.disp = 0;
   const f = (v) => v.toFixed(1).padStart(5), vs = 500 / Math.max(30, T.dispFps);                 // nửa chu kỳ màn hình (ƯỚC LƯỢNG)
   const total = T.cam + T.age + T.render + vs;
   setText("fps", Math.round(T.dispFps)); setText("lat", T.infer.toFixed(1) + "ms"); setText("hands", hands);
-  setText("head", face.alpha > .5 ? "ON" : "—"); setText("gest", slots.filter((s) => s.set.alpha > .5).map((s) => s.label).join(" · ") || "—");
-  setText("lead", "~" + Math.round(T.age) + "ms"); setText("prof", pname);
+  setText("head", face.alpha > .5 ? "ON" : "—"); setText("gest", slots.filter((s) => s.set.alpha > .5).map((s) => s.label + (now - s.swipeT < 700 ? " ↯" + ({ L: "←", R: "→", U: "↑", D: "↓" }[s.swipe] || "") : "")).join(" · ") || "—");
+  setText("lead", "~" + Math.round(T.age) + "ms");
   $("tele").textContent =
-`PROFILE ${pname} · ${ai?.kind || "-"} · ${T.res}
-CAM      ${f(T.cam)} ms  [đo] tuổi khung lúc callback${T.cam ? "" : " (không có captureTime)"}
-AI       ${f(T.infer)} ms  [đo] hand ${T.th.toFixed(1)} / face ${T.tf.toFixed(1)}
-XFER     ${f(Math.max(0, T.rtt - T.infer))} ms  [đo] truyền + chờ
-FILTER   ${f(T.filter)} ms  [đo]
-RENDER   ${f(T.render)} ms  [đo] CPU encode lệnh vẽ
-AGE      ${f(T.age)} ms  [đo] từ lúc gửi khung → vẽ
-PREDICT  ${f(T.age + 4)} ms  [ước lượng] tầm nhìn trước
-EST TOTAL${f(total)} ms  [ước lượng] cam+age+render+½vsync
-FPS cam ${T.camFps.toFixed(0)} · ai ${T.aiFps.toFixed(0)} · hiển thị ${T.dispFps.toFixed(0)} · DROPPED ${T.dropped}`;
+`PROFILE ${pname}${perf.level ? " ↓" + perf.level : ""} · ${ai?.kind || "-"} · ${T.res}      [ms]  P50/P95/P99/MAX
+CAM      ${f(T.cam)}  [đo] tuổi khung lúc callback${T.cam ? "" : " (không có captureTime)"}
+CAPTURE  ${f(M.cap.stats().p50)}  ${fmtP(M.cap)}  [đo] createImageBitmap
+XFER→W   ${f(M.xout.stats().p50)}  ${fmtP(M.xout)}  [đo] main→worker
+AI       ${f(T.infer)}  ${fmtP(M.ai)}  [đo] hand ${T.th.toFixed(1)} / face ${T.tf.toFixed(1)}
+W→MAIN   ${f(M.back.stats().p50)}  ${fmtP(M.back)}  [đo] pack+trả về
+POST     ${f(T.filter)}  ${fmtP(M.gest)}  [đo] assign+filter+gesture
+RENDER   ${f(T.render)}  ${fmtP(M.render)}  [đo] CPU encode lệnh vẽ
+AGE      ${f(T.age)}  ${fmtP(M.age)}  [đo] từ lúc trình chiếu khung → vẽ
+EST TOTAL${f(total)}  [ước lượng] cam+age+render+½vsync (CHƯA phải motion-to-photon)
+FPS cam ${T.camFps.toFixed(0)} · ai ${T.aiFps.toFixed(0)} · hiển thị ${T.dispFps.toFixed(0)} · DROPPED ${T.dropped} · STALE ${T.stale}`;
   if (noDet > 90) showError("AI chạy nhưng chưa thấy tay/đầu — đưa tay vào khung và đủ sáng.", 3000);
 }
 
 async function setProfile(n) {
   pname = n; P = PROFILES[n]; Object.assign(rend.fx, P.fx); rend.style = P.style; setText("style", STYLES[rend.style]); setText("prof", n);
-  if (!P.face) { face.reset(); face.miss = 99; }
+  if (!P.faceFps) { face.reset(); face.miss = 99; }
   if (running) await startCamera();
 }
 const cycleProfile = () => setProfile(Object.keys(PROFILES)[(Object.keys(PROFILES).indexOf(pname) + 1) % 3]);
@@ -160,5 +181,5 @@ $("switchBtn").onclick = () => { facing = facing === "user" ? "environment" : "u
 addEventListener("keydown", (e) => {
   const k = e.key.toLowerCase();
   if (k === "f") full(); else if (k === "c") $("switchBtn").click(); else if (k === "s") snapshot(); else if (k === "v") cycleStyle();
-  else if (k === "p") cycleProfile(); else if (k === "t") $("tele").classList.toggle("hidden"); else if (k === "h") $("handBtn").click(); else if (k === "e") $("headBtn").click();
+  else if (k === "p") cycleProfile(); else if (k === "t") $("tele").classList.toggle("hidden"); else if (k === "r") { if (!rec.toggle() && rec.rows.length) { const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(new Blob([rec.toJSONL()], { type: "application/jsonl" })), download: `replay-${Date.now()}.jsonl` }); a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); } showError(rec.on ? "● Đang ghi replay (R để dừng + tải)" : "Đã lưu replay", 2500); } else if (k === "h") $("handBtn").click(); else if (k === "e") $("headBtn").click();
 });

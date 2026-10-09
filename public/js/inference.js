@@ -13,7 +13,7 @@ export async function pickSources() {
 }
 
 export class InferenceClient {
-  busy = false; ready = false; kind = "WORKER"; onResult = null;
+  busy = false; ready = false; kind = "WORKER"; onResult = null; onIdle = null; cap = 0; tPost = 0;
   init(cfg) {
     return new Promise((res, rej) => {
       const w = (this.w = new Worker(new URL("./inference.worker.js", import.meta.url)));   // classic worker
@@ -21,16 +21,17 @@ export class InferenceClient {
       w.onmessage = ({ data: m }) => {
         if (m.type === "ready") { clearTimeout(to); this.ready = true; this.delegate = m.delegate; Object.assign(this, m.conn); res(); }
         else if (m.type === "error") { clearTimeout(to); rej(new Error(m.message)); }
-        else if (m.type === "result") { this.busy = false; this.onResult?.(m); }
+        else if (m.type === "result") { m.tRes = performance.timeOrigin + performance.now(); if (m.last) this.busy = false; this.onResult?.(m); if (m.last) this.onIdle?.(); }
       };
       w.onerror = (e) => { clearTimeout(to); rej(new Error(e.message || "worker lỗi")); };
       w.postMessage({ type: "init", ...cfg });
     });
   }
-  async submit(video, ts, opts) {
+  // ts = thời điểm khung được trình chiếu · tc = thời điểm chụp (nếu có). Chỉ 1 khung trong worker (queue ≤ 1); khung mới nhất luôn được chụp lúc worker rảnh.
+  async submit(video, ts, opts, tc = ts) {
     if (this.busy) return false;
-    this.busy = true;
-    try { const bmp = await createImageBitmap(video); this.w.postMessage({ type: "frame", ts, bmp, ...opts }, [bmp]); }
+    this.busy = true; const E = () => performance.timeOrigin + performance.now(), t0 = E();
+    try { const bmp = await createImageBitmap(video), t1 = E(); this.cap = t1 - t0; this.tPost = t1; this.w.postMessage({ type: "frame", ts, tc, bmp, ...opts }, [bmp]); }
     catch { this.busy = false; return false; }
     return true;
   }
@@ -38,12 +39,12 @@ export class InferenceClient {
 
 // Fallback khi worker không chạy được (iOS/Safari cũ, CSP…): suy luận ngay trên main thread, cùng giao diện.
 export class MainThreadAI {
-  busy = false; ready = false; kind = "MAIN"; onResult = null;
+  busy = false; ready = false; kind = "MAIN"; onResult = null; onIdle = null; cap = 0; tPost = 0;
   async init() { this.e = new Engine(); await this.e.load(); Object.assign(this, { handConn: this.e.handConn, faceConn: this.e.faceConn, faceMesh: this.e.faceMesh, faceOval: this.e.faceOval, delegate: this.e.delegate.hand }); this.ready = true; }
   async submit(video, ts, o) {
     const t0 = performance.now(); let h = new Float32Array(0), nh = 0, f = null, tHand = 0, tFace = 0;
     if (o.hands) { const a = performance.now(), lms = this.e.detectHands(video, ts); h = new Float32Array(lms.length * 63); lms.forEach((lm, k) => lm.forEach((p, i) => { h[k * 63 + i * 3] = p.x; h[k * 63 + i * 3 + 1] = p.y; })); nh = lms.length; tHand = performance.now() - a; }
     if (o.face) { const a = performance.now(), r = this.e.detectFace(video, ts); if (r) { f = new Float32Array(478 * 3); r.forEach((p, i) => { f[i * 3] = p.x; f[i * 3 + 1] = p.y; }); } tFace = performance.now() - a; }
-    queueMicrotask(() => this.onResult?.({ ts, nh, hands: h, face: f, faceRan: !!o.face, tHand, tFace, tAll: performance.now() - t0 })); return true;
+    this.busy = true; queueMicrotask(() => { this.busy = false; this.onResult?.({ ts, tc: ts, nh, hands: h, face: f, faceRan: !!o.face, faceOnly: false, last: true, tHand, tFace, tAll: performance.now() - t0 }); this.onIdle?.(); }); return true;
   }
 }
