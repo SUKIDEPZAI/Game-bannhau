@@ -30,6 +30,13 @@ Phân tích chi tiết: `LATENCY_ANALYSIS.md`.
 
 ## v13 — nâng cấp tracking / độ trễ / cử chỉ
 Chi tiết, bằng chứng và hạn chế: `docs/UPGRADE_V13.md` · số liệu benchmark: `docs/bench-output.txt`.
-- `npm test` (16 test, không cần cài thêm gì) · `npm run bench` (A/B v12 vs v13 + so sánh bộ lọc).
+- `npm test` (16 test) · `npm run e2e` (chạy nguyên main.js với trình duyệt giả, 6 kịch bản lỗi) · `npm run bench` (A/B v12 vs v13) · `npm run sweep` (Pareto tham số lọc). Không cần cài thêm gì.
 - Phím mới: `R` ghi/dừng replay (tải file `.jsonl` landmark thô + timestamp). `T` hiện telemetry P50/P95/P99/MAX.
 - Mọi hằng số quan trọng nằm trong `public/js/config.js` (có chú thích).
+
+
+## v14 — skeleton xương + chạm nút bằng đầu ngón tay
+- **Bỏ skeleton đầu/mặt** (không còn nạp model face → nhẹ hơn, hand luôn được ưu tiên).
+- **Skeleton mới "XƯƠNG"** (mặc định): xương bàn tay (cổ tay→gốc ngón) + đốt ngón, khớp tròn nhỏ dần về đầu ngón, mô lòng bàn tay; **mỗi đầu ngón là một vòng tròn màu**. Các kiểu NEON/WIRE/HOLO vẫn còn (nút 🎨 / phím `V`).
+- **Chạm nút bằng đầu ngón** (nút 👆 / phím `I` để bật/tắt): rê vòng tròn đầu ngón lên nút → nút sáng; **chỉ tay giữ yên ~0.7 s** → bấm (có vòng tiến trình); **chụm ngón cái + trỏ** → bấm ngay. Bàn tay xòe 5 ngón chỉ hover (chống bấm nhầm). Chỉnh trong `config.js` → `INTERACT`.
+- `npm test` (23 test) · `npm run e2e` (7 kịch bản) · `npm run preview` (xuất ảnh xem trước skeleton, cần python3 + Pillow).
