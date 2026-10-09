@@ -1,10 +1,16 @@
 {
   "name": "ai-hand-head-skeleton",
-  "version": "8.0.0",
+  "version": "13.0.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=18" },
-  "scripts": { "start": "node server.js" },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/run-all.js",
+    "bench": "node test/bench.js"
+  },
   "dependencies": {
     "@mediapipe/tasks-vision": "0.10.14",
     "compression": "^1.7.4",

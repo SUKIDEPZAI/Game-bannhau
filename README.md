@@ -10,7 +10,7 @@ Push repo → Render → New → Blueprint (đọc `render.yaml`, plan Free) →
 
 ## Cách 2 — giao diện trên GitHub Pages, Render làm backend
 1. Deploy repo lên Render như trên, copy URL.
-2. Mở `public/js/config.js`, dán URL vào `MANUAL`.
+2. Mở `public/js/config.js` — `MANUAL` đã được điền sẵn `https://game-bannhau.onrender.com` (đổi nếu service Render của bạn khác tên; nếu dùng Blueprint, sửa `name` trong `render.yaml` cho khớp để không tạo service thứ hai).
 3. Đưa nội dung thư mục `public/` (kèm `.nojekyll`) lên GitHub Pages (Settings → Pages → `main` + `/ (root)`).
 Render ngủ thì trang tự dùng CDN, không phải chờ.
 
@@ -26,3 +26,10 @@ Vị trí vẽ = vị trí lọc + vận tốc × (độ trễ camera đo thật
 Camera → rVFC (latest-frame-wins) → ImageBitmap → **classic Worker** (MediaPipe) → Float32Array → filter+predict → rAF → Canvas 2D.
 Phím: `P` profile (ULTRA/BALANCED/QUALITY) · `T` bật/tắt telemetry · `V` phong cách · `H` tay · `E` đầu · `S` chụp · `C` camera · `F` fullscreen.
 Phân tích chi tiết: `LATENCY_ANALYSIS.md`.
+
+
+## v13 — nâng cấp tracking / độ trễ / cử chỉ
+Chi tiết, bằng chứng và hạn chế: `docs/UPGRADE_V13.md` · số liệu benchmark: `docs/bench-output.txt`.
+- `npm test` (16 test, không cần cài thêm gì) · `npm run bench` (A/B v12 vs v13 + so sánh bộ lọc).
+- Phím mới: `R` ghi/dừng replay (tải file `.jsonl` landmark thô + timestamp). `T` hiện telemetry P50/P95/P99/MAX.
+- Mọi hằng số quan trọng nằm trong `public/js/config.js` (có chú thích).
