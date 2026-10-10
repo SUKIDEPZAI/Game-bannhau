@@ -1,4 +1,4 @@
-# AI Hand & Head Skeleton — gói tất cả trong một
+# AI Hand Skeleton — gói tất cả trong một
 
 ```
 server.js  package.json  render.yaml   ← Render (Free Web Service)
@@ -24,19 +24,22 @@ Vị trí vẽ = vị trí lọc + vận tốc × (độ trễ camera đo thật
 
 ## v12 — pipeline độ trễ thấp
 Camera → rVFC (latest-frame-wins) → ImageBitmap → **classic Worker** (MediaPipe) → Float32Array → filter+predict → rAF → Canvas 2D.
-Phím: `P` profile (ULTRA/BALANCED/QUALITY) · `T` bật/tắt telemetry · `V` phong cách · `H` tay · `E` đầu · `S` chụp · `C` camera · `F` fullscreen.
+Phím: `P` profile (ULTRA/BALANCED/QUALITY) · `T` bật/tắt telemetry · `V` phong cách · `H` tay · `I` bật/tắt chạm nút bằng đầu ngón · `R` ghi/dừng replay · `S` chụp · `C` camera · `F` fullscreen. v14 không còn chức năng theo dõi đầu/mặt nên phím `E` đã bị loại bỏ.
 Phân tích chi tiết: `LATENCY_ANALYSIS.md`.
 
 
 ## v13 — nâng cấp tracking / độ trễ / cử chỉ
 Chi tiết, bằng chứng và hạn chế: `docs/UPGRADE_V13.md` · số liệu benchmark: `docs/bench-output.txt`.
-- `npm test` (16 test) · `npm run e2e` (chạy nguyên main.js với trình duyệt giả, 6 kịch bản lỗi) · `npm run bench` (A/B v12 vs v13) · `npm run sweep` (Pareto tham số lọc). Không cần cài thêm gì.
+- `npm test` (16 test ở mốc v13) · `npm run e2e` (trình duyệt giả, 6 kịch bản ở mốc v13) · `npm run bench` (A/B v12 vs v13) · `npm run sweep` (Pareto tham số lọc). Không cần cài thêm gì.
 - Phím mới: `R` ghi/dừng replay (tải file `.jsonl` landmark thô + timestamp). `T` hiện telemetry P50/P95/P99/MAX.
 - Mọi hằng số quan trọng nằm trong `public/js/config.js` (có chú thích).
 
 
 ## v14 — skeleton xương + chạm nút bằng đầu ngón tay
+
+Bản audit/fix bổ sung: bảo vệ vòng đời camera bằng generation token, fallback RAF khi thiếu `requestVideoFrameCallback`, timeout/khôi phục khi Worker lỗi lúc đang chạy, reset tracking/telemetry khi đổi camera, bỏ nạp FaceLandmarker không dùng trong fallback, sửa hotkey `E` cũ và đo AGE theo track cũ nhất. Xem `docs/UPGRADE_V14_AUDIT.md` để biết chi tiết và giới hạn kiểm chứng.
+- Fallback main-thread chỉ tải HandLandmarker; không nạp FaceLandmarker khi Worker thất bại. Camera restart có generation guard, hủy callback cũ, fallback RAF khi thiếu `requestVideoFrameCallback`; AGE lấy track cũ nhất đang hiển thị.
 - **Bỏ skeleton đầu/mặt** (không còn nạp model face → nhẹ hơn, hand luôn được ưu tiên).
 - **Skeleton mới "XƯƠNG"** (mặc định): xương bàn tay (cổ tay→gốc ngón) + đốt ngón, khớp tròn nhỏ dần về đầu ngón, mô lòng bàn tay; **mỗi đầu ngón là một vòng tròn màu**. Các kiểu NEON/WIRE/HOLO vẫn còn (nút 🎨 / phím `V`).
 - **Chạm nút bằng đầu ngón** (nút 👆 / phím `I` để bật/tắt): rê vòng tròn đầu ngón lên nút → nút sáng; **chỉ tay giữ yên ~0.7 s** → bấm (có vòng tiến trình); **chụm ngón cái + trỏ** → bấm ngay. Bàn tay xòe 5 ngón chỉ hover (chống bấm nhầm). Chỉnh trong `config.js` → `INTERACT`.
-- `npm test` (23 test) · `npm run e2e` (7 kịch bản) · `npm run preview` (xuất ảnh xem trước skeleton, cần python3 + Pillow).
+- `npm test` (28 test sau audit v14) · `npm run e2e` (9 kịch bản mô phỏng, gồm fallback khi không có rVFC và camera restart thất bại) · `npm run preview` (xuất ảnh xem trước skeleton, cần python3 + Pillow).

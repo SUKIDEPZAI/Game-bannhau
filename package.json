@@ -1,5 +1,5 @@
 {
-  "name": "ai-hand-head-skeleton",
+  "name": "ai-hand-skeleton",
   "version": "14.0.0",
   "private": true,
   "type": "module",
@@ -8,7 +8,7 @@
   },
   "scripts": {
     "start": "node server.js",
-    "test": "node --test test/run-all.js",
+    "test": "node --test test/*.test.js test/run-all.js",
     "bench": "node test/bench.js",
     "e2e": "node test/e2e-matrix.js",
     "sweep": "node test/sweep.js",
