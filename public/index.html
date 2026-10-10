@@ -4,7 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <meta name="theme-color" content="#05070a">
-<title>AI Hand Skeleton v14 — xương bàn tay &amp; chạm nút bằng đầu ngón</title>
+<meta name="application-name" content="Skeleton v18 Performance Lab">
+<meta name="color-scheme" content="dark">
+<title>Skeleton v18 — Low Latency Performance Lab</title>
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -12,10 +14,24 @@
   <video id="video" autoplay playsinline muted></video>
   <canvas id="overlay"></canvas>
   <div class="shade"></div>
+  <aside id="aiPanel" class="agent-panel glass hidden" aria-label="Skeleton Performance Lab">
+    <div class="agent-panel-head"><div><strong>SKELETON PERFORMANCE LAB</strong><small id="agentSummary">16 managers · đang khởi động</small></div><button id="closeLabBtn" class="icon-close no-fingertip" aria-label="Đóng">×</button></div>
+    <div class="model-tools">
+      <div class="model-state"><b id="activeModelLabel">Model A · MediaPipe</b><small id="serviceStatus">API đang kiểm tra · DB chưa xác minh</small></div>
+      <button id="modelSwitchBtn" class="no-fingertip">Thử Model B · WebGPU</button>
+      <button id="abBtn" class="primary no-fingertip">Chạy A/B (~24s)</button>
+    </div>
+    <div id="abStatus" class="lab-status">A là mô hình mặc định. B là thử nghiệm WebGPU; lỗi sẽ quay về A.</div>
+    <label class="metrics-consent"><input id="metricsConsent" type="checkbox"> Lưu số liệu hiệu năng tổng hợp vào PostgreSQL (không ảnh, video hay landmarks)</label>
+    <pre id="abReport" class="ab-report">Benchmark chưa chạy. A/B dùng camera hiện tại; đừng di chuyển thiết bị trong lúc đo.</pre>
+    <div id="agentGrid" class="agent-grid" aria-live="polite"></div>
+    <div class="self-review"><b>SELF-REVIEW</b><p id="selfReview">Đang chờ đủ mẫu để kiểm tra mâu thuẫn giữa agent.</p></div>
+    <p class="lab-footnote">Các specialist là bộ giám sát cục bộ theo luật, không phải 15 mạng neural. Model B tải qua CDN và chỉ được giữ nếu đo thực tế có lợi.</p>
+  </aside>
   <pre id="tele" class="tele"></pre>
 
   <div class="top">
-    <div class="brand glass">HAND <span>·</span> BONE v14</div>
+    <div class="brand glass">HAND <span>·</span> SKELETON v18</div>
     <div class="row-btn">
       <button id="snapBtn" title="Chụp ảnh (S)">📸</button>
       <button id="handBtn" title="Bật/tắt skeleton tay (H)">✋</button>
@@ -24,6 +40,8 @@
       <button id="uiBtn" title="Bật/tắt chạm nút bằng đầu ngón tay (I)">👆</button>
       <button id="switchBtn" title="Đổi camera (C)">↔</button>
       <button id="fullBtn" title="Toàn màn hình (F)">⛶</button>
+      <button id="labBtn" title="Mở Performance Lab">⚙ LAB</button>
+      <a id="wonderBtn" class="nav-link" href="/wondersnap/" aria-label="Mở WonderSnap 3D particle mode">✨ WONDER</a>
     </div>
   </div>
 
@@ -37,7 +55,7 @@
       <div class="pill glass">BÙ TRỄ <b id="lead">--</b></div>
       <div class="pill glass">⚡ <b id="prof">BALANCED</b></div>
       <div class="pill glass">PING <b id="ping">--</b></div>
-      <div class="pill glass">MODEL <b id="modelState">OFF</b></div>
+      <div class="pill glass">AI MODEL <b id="modelState">OFF</b></div>
     </div>
     <div class="row-btn">
       <button id="startBtn" class="primary">📷 Bật camera</button>
@@ -48,13 +66,14 @@
   <div id="welcome" class="center">
     <div class="dialog">
       <h1>AI Pose Camera</h1>
-      <p>Skeleton bàn tay dạng xương (21 điểm) với vòng tròn ở đầu mỗi ngón. <b>Chạm nút bằng đầu ngón</b>: chỉ tay giữ yên ~0.7 s, hoặc chụm ngón cái + trỏ để bấm.</p>
+      <p>Skeleton bàn tay 21 điểm, ưu tiên phản hồi thấp; dùng Performance Lab để so sánh MediaPipe với WebGPU ngay trên thiết bị. <b>Chạm nút bằng đầu ngón</b>: chỉ tay giữ yên ~0.7 s, hoặc chụm ngón cái + trỏ để bấm.</p>
       <div class="btns"><button id="startMain" class="primary">📷 Bắt đầu</button><button id="fullMain">⛶ Fullscreen</button></div>
-      <p style="margin:12px 0 0;font-size:11px">Video xử lý hoàn toàn trên thiết bị bằng MediaPipe, không gửi lên server.</p>
+      <p style="margin:12px 0 0;font-size:11px">Video và landmarks xử lý cục bộ; backend chỉ nhận số liệu hiệu năng tổng hợp khi được gọi, không nhận ảnh/video.</p>
     </div>
   </div>
   <div id="error" class="error glass hidden"></div>
 </div>
+<script>window.SKELETON_CONFIG = window.SKELETON_CONFIG || {};</script>
 <script type="module" src="js/main.js"></script>
 </body>
 </html>
