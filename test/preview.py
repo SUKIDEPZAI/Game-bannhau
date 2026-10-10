@@ -1,6 +1,8 @@
 import json, math, sys
+from pathlib import Path
 from PIL import Image, ImageDraw
-D = json.load(open('/home/claude/preview.json')); S = 2; N = 640 * S
+HERE = Path(__file__).resolve().parent
+D = json.loads((HERE / 'preview.json').read_text(encoding='utf-8')); S = 2; N = 640 * S
 def col(c, a):
     c = c.lstrip('#'); 
     if len(c) == 3: c = ''.join(x*2 for x in c)
@@ -42,8 +44,8 @@ def render(cmds, path):
         elif k == 'fill': img = flush_layer('fill', st)
         elif k == 'stroke': img = flush_layer('stroke', st)
     img.resize((640, 640), Image.LANCZOS).convert('RGB').save(path)
-for name, cmds in D.items(): render(cmds, f'/home/claude/prev_{name}.png')
+for name, cmds in D.items(): render(cmds, str(HERE / f'prev_{name}.png'))
 # ghép
 names = list(D.keys()); sheet = Image.new('RGB', (640*2, 640*2))
-for i, n in enumerate(names): sheet.paste(Image.open(f'/home/claude/prev_{n}.png'), ((i%2)*640, (i//2)*640))
-sheet.resize((960, 960)).save('/home/claude/prev_sheet.png'); print('ok', names)
+for i, n in enumerate(names): sheet.paste(Image.open(HERE / f'prev_{n}.png'), ((i%2)*640, (i//2)*640))
+sheet.resize((960, 960)).save(HERE / 'prev_sheet.png'); print('ok', names)

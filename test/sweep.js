@@ -10,4 +10,6 @@ const rows = []; for (const mc of [1.2, 1.6, 2.2, 3, 4]) for (const b of [40, 60
 const front = rows.filter((r) => !rows.some((q) => q !== r && q.move <= r.move && q.rest <= r.rest && (q.move < r.move || q.rest < r.rest))).sort((a, b) => a.rest - b.rest);
 console.log("Pareto front (rest = jitter đầu ngón khi đứng yên, move = lỗi rms khi chuyển động; đơn vị hand-size)");
 for (const r of front) console.log(`minCutoff ${r.mc} beta ${String(r.b).padStart(3)} dCutoff ${r.dc} | rest ${r.rest.toFixed(4)} | move ${r.move.toFixed(4)}`);
-const cur = rows.find((r) => r.mc === 2.2 && r.b === 60 && r.dc === 6); console.log(`\nHIỆN TẠI  minCutoff 2.2 beta 60 dCutoff 6 | rest ${cur.rest.toFixed(4)} | move ${cur.move.toFixed(4)}`);
+const curCfg = FILTER.hand, cur = rows.find((r) => r.mc === curCfg.minCutoff && r.b === curCfg.beta && r.dc === curCfg.dCutoff);
+if (cur) console.log(`\nCẤU HÌNH ĐANG DÙNG  minCutoff ${curCfg.minCutoff} beta ${curCfg.beta} dCutoff ${curCfg.dCutoff} | rest ${cur.rest.toFixed(4)} | move ${cur.move.toFixed(4)}`);
+else console.log(`\nCẤU HÌNH ĐANG DÙNG (${curCfg.minCutoff}/${curCfg.beta}/${curCfg.dCutoff}) không thuộc lưới quét; cần thêm bộ giá trị này vào danh sách sweep.`);

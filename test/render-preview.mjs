@@ -1,6 +1,9 @@
 // Ghi lệnh vẽ của renderer.js ra JSON để dựng ảnh xem trước (test/preview.py).
 import { Renderer } from "../public/js/renderer.js";
 import { writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
+const here = path.dirname(fileURLToPath(import.meta.url));
 function pose({ ext = [1, 1, 1, 1], thumb = 1 } = {}) {
   const L = Array.from({ length: 21 }, () => ({ x: 0, y: 0 })), W = { x: .5, y: .82 }, mcp = [[-.05, -.12], [-.005, -.13], [.04, -.12], [.082, -.10]];
   L[0] = W; [5, 9, 13, 17].forEach((id, f) => { const b = { x: W.x + mcp[f][0], y: W.y + mcp[f][1] }; L[id] = b; const len = [.085, .095, .088, .07][f];
@@ -21,4 +24,4 @@ for (const [name, p, ui, style] of [["xuong_xoe", pose(), null, 0], ["xuong_chit
   r.hand({ d, alpha: 1, ui: ui ? { hov: Uint8Array.from(ui.hov), prog: Float32Array.from(ui.prog), flash: -1e9 } : null }, conn, "Chỉ tay", 1000);
   out[name] = cmds;
 }
-writeFileSync("/home/claude/preview.json", JSON.stringify(out));
+writeFileSync(path.join(here, "preview.json"), JSON.stringify(out));
