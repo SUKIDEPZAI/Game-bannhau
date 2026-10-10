@@ -2,6 +2,7 @@
 // level 0: nguyên profile · 1: tắt tia laser + vệt · 2: + tắt glow · 3: + tắt nhãn chữ. (Không đụng tới skeleton/gesture/tương tác.)
 export class PerfController {
   constructor(cfg) { this.c = cfg; this.level = 0; this.badSince = 0; this.goodSince = 0; this.lastChange = -1e9; }
+  reset(now = 0) { this.level = 0; this.badSince = 0; this.goodSince = 0; this.lastChange = now; }
   update(now, m) {                                               // m = { aiP95, ageP95, renderP95 } → level mới nếu đổi, ngược lại null
     const c = this.c, over = m.aiP95 > c.aiP95Budget || m.ageP95 > c.ageP95Budget || m.renderP95 > c.renderP95Budget;
     const calm = m.aiP95 < c.aiP95Budget * 0.7 && m.ageP95 < c.ageP95Budget * 0.7 && m.renderP95 < c.renderP95Budget * 0.7;

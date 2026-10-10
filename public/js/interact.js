@@ -24,6 +24,16 @@ export class Interact {
     for (const el of this.prevHov) if (el.__kbF !== this.frame && el.__kbOn) { el.classList.remove("kb-hover"); el.__kbOn = false; el.style.setProperty("--p", "0"); el.__kbS = 0; }
     const t = this.prevHov; this.prevHov = this.hov; this.hov = t; this.hov.length = 0;
   }
+  clearVisuals(slots = []) {
+    for (const s of slots) if (s.set.ui) { this.release(s.set.ui); s.set.ui.x.fill(0); s.set.ui.y.fill(0); s.set.ui.t0.fill(0); s.set.ui.flash = -1e9; }
+    this.lastT = 0;
+    const els = new Set([...this.hov, ...this.prevHov, ...this.rects.map((r) => r.el)]);
+    for (const el of els) {
+      el.classList.remove("kb-hover", "kb-press");
+      el.style.setProperty("--p", "0"); el.__kbOn = false; el.__kbS = 0; el.__kbP = 0;
+    }
+    this.hov.length = 0; this.prevHov.length = 0; this.rects.length = 0; this.scanT = -1e9;
+  }
   release(ui) { ui.valid = false; ui.pinch = false; ui.prog.fill(0); ui.hov.fill(0); ui.fired.fill(0); ui.tgt.fill(null); }
   // slots[i] = { set (SmoothSet: d, ui), vis, g (GestureTracker: ext, thumb), label }
   update(now, slots, mirrored, vw, vh) {

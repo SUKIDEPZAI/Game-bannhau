@@ -14,7 +14,8 @@ const MODEL = {
 export class Engine {
   ready = false; delegate = {}; errors = 0; ts = { hand: 0, face: 0 };
 
-  async load(status = () => {}) {
+  // v14 chỉ cần tracking bàn tay; khuôn mặt chỉ được nạp khi được yêu cầu tường minh.
+  async load(status = () => {}, { face: loadFace = false } = {}) {
     let mod, src, lastErr;
     const SOURCES = [...(await renderAlive() ? [{ root: `${RENDER_URL}/vendor`, js: `${RENDER_URL}/vendor/vision_bundle.mjs`, local: true }] : []), ...CDN_SOURCES];
     for (const s of SOURCES) {
@@ -32,14 +33,18 @@ export class Engine {
       throw new Error(`Không tạo được model ${name}`);
     };
     this.hands = await build("hand", mod.HandLandmarker, { numHands: 2, minHandDetectionConfidence: .4, minHandPresenceConfidence: .4, minTrackingConfidence: .4 });
-    this.face = await build("face", mod.FaceLandmarker, { numFaces: 1, minFaceDetectionConfidence: .4, minFacePresenceConfidence: .4, minTrackingConfidence: .4 });
     this.handConn = mod.HandLandmarker.HAND_CONNECTIONS;
-    this.faceConn = mod.FaceLandmarker.FACE_LANDMARKS_CONTOURS;
-    this.faceMesh = mod.FaceLandmarker.FACE_LANDMARKS_TESSELATION;
-    this.faceOval = mod.FaceLandmarker.FACE_LANDMARKS_FACE_OVAL;
+    if (loadFace) {
+      this.face = await build("face", mod.FaceLandmarker, { numFaces: 1, minFaceDetectionConfidence: .4, minFacePresenceConfidence: .4, minTrackingConfidence: .4 });
+      this.faceConn = mod.FaceLandmarker.FACE_LANDMARKS_CONTOURS;
+      this.faceMesh = mod.FaceLandmarker.FACE_LANDMARKS_TESSELATION;
+      this.faceOval = mod.FaceLandmarker.FACE_LANDMARKS_FACE_OVAL;
+    } else {
+      this.face = null; this.faceConn = []; this.faceMesh = []; this.faceOval = [];
+    }
     this.ready = true;
   }
   detectHands(v, t) { try { this.ts.hand = Math.max(t, this.ts.hand + 1); return this.hands.detectForVideo(v, this.ts.hand).landmarks || []; } catch (e) { this.fail(e); return []; } }
-  detectFace(v, t) { try { this.ts.face = Math.max(t, this.ts.face + 1); return this.face.detectForVideo(v, this.ts.face).faceLandmarks?.[0] || null; } catch (e) { this.fail(e); return null; } }
+  detectFace(v, t) { if (!this.face) return null; try { this.ts.face = Math.max(t, this.ts.face + 1); return this.face.detectForVideo(v, this.ts.face).faceLandmarks?.[0] || null; } catch (e) { this.fail(e); return null; } }
   fail(e) { if (this.errors++ < 3) console.error("detect lỗi", e); }
 }

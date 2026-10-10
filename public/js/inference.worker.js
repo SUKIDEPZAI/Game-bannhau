@@ -32,14 +32,14 @@ onmessage = async (e) => {
     if (m.hands) { tH0 = E(); const lms = hands.detectForVideo(m.bmp, ts.h = Math.max(m.ts, ts.h + 1)).landmarks || []; h = packHands(lms); nh = lms.length; tH1 = E(); tHand = tH1 - tH0; }
   } catch (err) { /* bỏ khung lỗi */ }
   // HAND ƯU TIÊN: gửi kết quả tay ngay (không chờ face) → face không làm tăng độ trễ tay.
-  postMessage({ type: "result", ts: m.ts, tc: m.tc, nh, hands: h, face: null, faceRan: false, faceOnly: false, last: !m.face, tHand, tAll: tHand, tRecv, tH0, tH1, tSend: E() }, [h.buffer]);
+  postMessage({ type: "result", ts: m.ts, tc: m.tc, session: m.session, nh, hands: h, face: null, faceRan: false, faceOnly: false, last: !m.face, tHand, tAll: tHand, tRecv, tH0, tH1, tSend: E() }, [h.buffer]);
   if (m.face) {
     let f = null, tFace = 0;
     try {
       await makeFace(); const a = performance.now(); const r = face?.detectForVideo(m.bmp, ts.f = Math.max(m.ts, ts.f + 1)).faceLandmarks?.[0];
       if (r) { f = new Float32Array(478 * 3); r.forEach((p, i) => { f[i * 3] = p.x; f[i * 3 + 1] = p.y; f[i * 3 + 2] = p.z || 0; }); } tFace = performance.now() - a;
     } catch (err) { /* bỏ */ }
-    postMessage({ type: "result", ts: m.ts, tc: m.tc, nh: 0, hands: new Float32Array(0), face: f, faceRan: true, faceOnly: true, last: true, tFace, tHand: 0, tAll: tFace }, f ? [f.buffer] : []);
+    postMessage({ type: "result", ts: m.ts, tc: m.tc, session: m.session, nh: 0, hands: new Float32Array(0), face: f, faceRan: true, faceOnly: true, last: true, tFace, tHand: 0, tAll: tFace }, f ? [f.buffer] : []);
   }
   m.bmp.close();
 };

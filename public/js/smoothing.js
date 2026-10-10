@@ -14,7 +14,13 @@ export class SmoothSet {
     this.pv = new Float64Array(2); this.pvp = new Float64Array(2); this.pp = new Float64Array(2);   // vận tốc palm, trước đó, vị trí palm thô trước
     this._t = Array.from({ length: n }, () => ({ x: 0, y: 0 }));
   }
-  reset() { this.has = false; }
+  reset() {
+    this.has = false; this.last = 0; this.tAge = 0; this.alpha = 0; this.miss = 99; this.lead = 0;
+    this.scale = this.cfg.scaleRef; this.rev = 0; this.reacq = 0; this.pe = 0; this.acc = 0; this.gain = 0; this.nOut = 0;
+    this.x.fill(0); this.v.fill(0); this.d.fill(0); this.r.fill(0);
+    this.pv.fill(0); this.pvp.fill(0); this.pp.fill(0);
+    for (const p of this._t) { p.x = 0; p.y = 0; }
+  }
   pushPacked(f, off, ts, tAge = ts, stride = 3) {                  // đọc thẳng Float32Array của worker, không cấp phát
     for (let i = 0; i < this.n; i++) { const p = this._t[i], o = off + i * stride; p.x = f[o]; p.y = f[o + 1]; }
     this.push(this._t, ts, tAge);

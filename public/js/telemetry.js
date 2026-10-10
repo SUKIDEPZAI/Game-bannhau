@@ -1,6 +1,7 @@
 // Telemetry: vòng đệm cố định (không cấp phát khi ghi) + percentile P50/P90/P95/P99/MAX. Chỉ sort khi cập nhật HUD.
 export class Metric {
   constructor(n = 240) { this.a = new Float32Array(n); this.s = new Float32Array(n); this.i = 0; this.n = 0; }
+  reset() { this.a.fill(0); this.s.fill(0); this.i = 0; this.n = 0; }
   push(v) { this.a[this.i] = v; this.i = (this.i + 1) % this.a.length; if (this.n < this.a.length) this.n++; }
   stats(out = {}) {
     const n = this.n; if (!n) return Object.assign(out, { p50: 0, p90: 0, p95: 0, p99: 0, max: 0 });

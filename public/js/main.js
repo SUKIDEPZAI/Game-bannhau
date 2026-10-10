@@ -14,10 +14,12 @@ const common = { maxH: FILTER.maxHorizon, gapMs: FILTER.gapMs, reacqMs: FILTER.r
 const slots = [0, 1].map(() => ({ set: new SmoothSet(21, { ...FILTER.hand, ...common }), label: "", g: new GestureTracker(), sw: new SwipeDetector(), swipe: "", swipeT: -1e9 }));
 const M = Object.fromEntries(["ai", "age", "render", "xfer", "cap", "xout", "wq", "back", "gest"].map((k) => [k, new Metric()]));
 const rec = new Recorder(), perf = new PerfController(PERF); let perfT = 0, lastSubmitPf = -1, fm = { now: 0, cap: 0, pf: 0, n: 0 };
-let ai = null, pname = "BALANCED", P = PROFILES[pname], stream = null, running = false, facing = "user", frameNo = 0, lastRaf = 0, camLag = 25;
+let ai = null, modelPromise = null, startPromise = null, aiRecovery = false, pname = "BALANCED", P = PROFILES[pname], stream = null, running = false, facing = "user", lastRaf = 0, camLag = 25;
+let cameraGeneration = 0, cameraNeedsRetry = false, rafId = 0, frameCbId = null, frameCbKind = "", fallbackFrameNo = 0, lastFallbackVideoTime = -1;
 const show = { hands: true };
 const ix = new Interact(canvas, INTERACT, () => document.querySelectorAll(INTERACT.selector));
-globalThis.__skel = { slots, fm, ix };   // phục vụ test/E2E & gỡ lỗi trong Console
+globalThis.__skel = { slots, fm, ix };
+Object.defineProperty(globalThis.__skel, "running", { get: () => running }); // phục vụ test/E2E & gỡ lỗi trong Console
 const T = { stale: 0, cam: 0, infer: 0, th: 0, rtt: 0, filter: 0, render: 0, age: 0, camFps: 0, aiFps: 0, dispFps: 0, dropped: 0, res: "—" };
 const cnt = { cam: 0, ai: 0, disp: 0 }; let cntT = performance.now(), hudT = 0, noDet = 0;
 const ema = (cur, v, k = 0.2) => cur + (v - cur) * k;
@@ -29,39 +31,138 @@ const setBtn = (on) => { $("startBtn").classList.toggle("hidden", on); $("stopBt
 
 async function ensureModel() {
   if (ai?.ready) return true;
-  setText("modelState", "LOAD"); showError("Đang tải AI…", 0);
-  const srcs = await pickSources();
-  for (const src of srcs) {                                        // Worker: thử Render rồi CDN; chỉ khi cả hai lỗi mới rơi xuống main thread
-    const c = new InferenceClient();
-    try { await c.init({ ...src, face: false }); ai = c; break; }
-    catch (e) { console.warn("Worker lỗi với nguồn", src.root, e); c.w?.terminate?.(); }
-  }
-  if (!ai) {
-    try { const m = new MainThreadAI(); await m.init(); ai = m; } catch (e2) { setText("modelState", "ERR"); showError("Không tải được AI: " + (e2.message || e2)); return false; }
-  }
-  ai.onResult = onResult; ai.onIdle = kick; setText("modelState", `${ai.kind}/${ai.delegate}`); $("error").classList.add("hidden"); return true;
+  if (modelPromise) return modelPromise;
+  modelPromise = (async () => {
+    setText("modelState", "LOAD"); showError("Đang tải AI…", 0);
+    const srcs = await pickSources();
+    for (const src of srcs) {
+      const c = new InferenceClient();
+      try { await c.init({ ...src, face: false }); ai = c; break; }
+      catch (e) { console.warn("Worker lỗi với nguồn", src.root, e); c.w?.terminate?.(); }
+    }
+    if (!ai) {
+      try { const m = new MainThreadAI(); await m.init(); ai = m; }
+      catch (e2) { setText("modelState", "ERR"); showError("Không tải được AI: " + (e2.message || e2)); return false; }
+    }
+    bindAI(ai); setText("modelState", `${ai.kind}/${ai.delegate}`); $("error").classList.add("hidden"); return true;
+  })();
+  try { return await modelPromise; }
+  finally { modelPromise = null; }
 }
 
-async function startCamera() {
-  try {
-    stream?.getTracks().forEach((t) => t.stop());
-    const [w, h, fps] = P.cam;
-    stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: facing }, width: { ideal: w }, height: { ideal: h }, frameRate: { ideal: fps, max: fps } } });
-    video.srcObject = stream; await video.play();
-    const s = stream.getVideoTracks()[0].getSettings(); T.res = `${s.width}x${s.height}@${Math.round(s.frameRate || 0)}`;   // camera thật sự cấp gì (có thể khác yêu cầu)
-    rend.mirrored = facing === "user"; stage.classList.toggle("mirror", rend.mirrored);
-    lastSubmitPf = -1; fm.n = 0; perfT = performance.now() + PERF.warmupMs;   // khởi động lại bộ đếm khung + chờ ổn định trước khi đánh giá hiệu năng
-    $("welcome").classList.add("hidden"); setBtn(true); noDet = 0;
-    if (!running) { running = true; lastRaf = performance.now(); requestAnimationFrame(loop); video.requestVideoFrameCallback(onFrame); }
-  } catch (e) { console.error(e); setBtn(false); showError("Không mở được camera." + (isSecureContext ? " Hãy cấp quyền camera." : " Cần HTTPS hoặc localhost.")); }
+
+function bindAI(client) {
+  client.onResult = (m) => onResult(m, client); client.onIdle = () => { if (ai === client) kick(); };
+  client.onFailure = client.kind === "WORKER" ? (error) => { void recoverAI(client, error); } : null;
 }
-function stopCamera() { running = false; stream?.getTracks().forEach((t) => t.stop()); stream = null; rend.clear(); setBtn(false); $("welcome").classList.remove("hidden"); }
+async function recoverAI(failedClient, error) {
+  if (ai !== failedClient || aiRecovery || failedClient.kind !== "WORKER") return;
+  aiRecovery = true; showError("Worker gặp lỗi; đang chuyển sang chế độ dự phòng…", 0);
+  console.warn("Worker tracking lỗi, chuyển fallback:", error);
+  try {
+    const fallback = new MainThreadAI(); await fallback.init();
+    if (ai !== failedClient) return;
+    ai = fallback; bindAI(fallback); setText("modelState", `${fallback.kind}/${fallback.delegate}`);
+    $("error").classList.add("hidden"); kick();
+  } catch (e) {
+    if (ai === failedClient) ai = null;
+    setText("modelState", "ERR"); showError("Worker và chế độ dự phòng đều lỗi: " + (e.message || e), 0);
+  } finally { aiRecovery = false; }
+}
+
+function cancelPumps() {
+  if (rafId && typeof cancelAnimationFrame === "function") cancelAnimationFrame(rafId);
+  rafId = 0;
+  if (frameCbId != null) {
+    if (frameCbKind === "video") video.cancelVideoFrameCallback?.(frameCbId);
+    else if (typeof cancelAnimationFrame === "function") cancelAnimationFrame(frameCbId);
+  }
+  frameCbId = null; frameCbKind = "";
+}
+function resetTracking() {
+  for (const s of slots) {
+    s.set.reset(); s.g.reset(); s.sw.reset(); s.label = ""; s.swipe = ""; s.swipeT = -1e9;
+  }
+  ix.clearVisuals?.(slots);
+}
+function resetTelemetry(now = performance.now()) {
+  for (const metric of Object.values(M)) metric.reset();
+  Object.assign(T, { stale: 0, cam: 0, infer: 0, th: 0, rtt: 0, filter: 0, render: 0, age: 0, camFps: 0, aiFps: 0, dispFps: 0, dropped: 0, res: "—" });
+  cnt.cam = cnt.ai = cnt.disp = 0; cntT = now; hudT = 0; camLag = 25;
+  fm.now = 0; fm.cap = 0; fm.pf = 0; fm.n = 0;
+  perf.reset(now); perf.applyFx(rend.fx, P.fx); setText("prof", pname);
+}
+function scheduleFrame(token) {
+  if (!running || token !== cameraGeneration) return;
+  if (typeof video.requestVideoFrameCallback === "function") {
+    frameCbKind = "video";
+    frameCbId = video.requestVideoFrameCallback((now, meta) => {
+      frameCbId = null; frameCbKind = "";
+      if (!running || token !== cameraGeneration) return;
+      scheduleFrame(token); // đặt lịch frame kế trước khi xử lý frame hiện tại
+      onFrame(now, meta || {}, token);
+    });
+    return;
+  }
+  // Fallback cho trình duyệt chưa có rVFC: chỉ xử lý khi currentTime đổi, tránh lặp cùng frame theo nhịp màn hình.
+  frameCbKind = "raf";
+  frameCbId = requestAnimationFrame((now) => {
+    frameCbId = null; frameCbKind = "";
+    if (!running || token !== cameraGeneration) return;
+    scheduleFrame(token);
+    if (video.readyState >= 2 && video.currentTime !== lastFallbackVideoTime) {
+      lastFallbackVideoTime = video.currentTime;
+      onFrame(now, { presentedFrames: ++fallbackFrameNo }, token);
+    }
+  });
+}
+async function startCamera() {
+  const token = ++cameraGeneration;
+  cameraNeedsRetry = false;
+  running = false;
+  cancelPumps();
+  const oldStream = stream; stream = null;
+  oldStream?.getTracks().forEach((t) => t.stop());
+  resetTracking(); rend.clear(); resetTelemetry();
+  try {
+    const [w, h, fps] = P.cam;
+    const nextStream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: facing }, width: { ideal: w }, height: { ideal: h }, frameRate: { ideal: fps, max: fps } } });
+    if (token !== cameraGeneration) { nextStream.getTracks().forEach((t) => t.stop()); return; }
+    stream = nextStream;
+    video.srcObject = nextStream; await video.play();
+    if (token !== cameraGeneration) { nextStream.getTracks().forEach((t) => t.stop()); if (stream === nextStream) stream = null; return; }
+    const settings = nextStream.getVideoTracks()[0]?.getSettings?.() || {};
+    T.res = `${settings.width || video.videoWidth}x${settings.height || video.videoHeight}@${Math.round(settings.frameRate || 0)}`;
+    rend.mirrored = facing === "user"; stage.classList.toggle("mirror", rend.mirrored);
+    resetTracking();
+    lastSubmitPf = -1; fm.n = 0; fallbackFrameNo = 0; lastFallbackVideoTime = -1;
+    perfT = performance.now() + PERF.warmupMs;
+    $("welcome").classList.add("hidden"); setBtn(true); noDet = 0;
+    running = true; lastRaf = performance.now();
+    rafId = requestAnimationFrame((t) => loop(t, token));
+    scheduleFrame(token);
+  } catch (e) {
+    if (token !== cameraGeneration) return;
+    console.error(e); running = false; cameraNeedsRetry = true; cancelPumps();
+    stream?.getTracks().forEach((t) => t.stop()); stream = null;
+    try { video.pause(); } catch {}
+    video.srcObject = null; rend.clear(); ix.clearVisuals?.(slots);
+    setBtn(false); $("welcome").classList.remove("hidden");
+    showError("Không mở được camera." + (globalThis.isSecureContext ? " Hãy kiểm tra quyền camera." : " Cần HTTPS hoặc localhost."));
+  }
+}
+function stopCamera() {
+  ++cameraGeneration; running = false; cameraNeedsRetry = false; cancelPumps();
+  stream?.getTracks().forEach((t) => t.stop()); stream = null;
+  try { video.pause(); } catch {}
+  video.srcObject = null; resetTracking(); rend.clear(); setBtn(false); $("welcome").classList.remove("hidden");
+}
 
 // LATEST-FRAME-WINS: worker chỉ giữ 1 khung. Khung đến khi bận KHÔNG xếp hàng; khi worker xong (onIdle) ta chụp ngay khung MỚI NHẤT đang hiển thị
 // (không chờ khung kế → bớt ~½ chu kỳ camera). presentedFrames dùng để không xử lý lại cùng một khung.
-function onFrame(now, meta) {
-  if (!running) return;
-  video.requestVideoFrameCallback(onFrame); cnt.cam++;
+function onFrame(now, meta, token) {
+  if (!running || token !== cameraGeneration) return;
+  cnt.cam++;
   const hasCap = meta.captureTime && Math.abs(meta.captureTime - now) < 500;
   if (hasCap) {                                                    // ĐO THẬT: tuổi khung lúc callback; ƯỚC LƯỢNG: capture→hiển thị
     T.cam = ema(T.cam, now - meta.captureTime);
@@ -73,17 +174,30 @@ function onFrame(now, meta) {
 }
 function kick() {
   if (!running || !ai?.ready || document.hidden || ai.busy || fm.pf === lastSubmitPf) return;
-  lastSubmitPf = fm.pf; frameNo++; rend.resize(video.videoWidth, video.videoHeight);
-  ai.submit(video, fm.now, { hands: show.hands, face: false }, fm.cap);
+  lastSubmitPf = fm.pf; rend.resize(video.videoWidth, video.videoHeight);
+  const client = ai;
+  try {
+    const task = client.submit(video, fm.now, { hands: show.hands, face: false }, fm.cap, cameraGeneration);
+    task?.catch?.((error) => {
+      if (client !== ai) return;
+      if (client.kind === "WORKER") void recoverAI(client, error);
+      else { client.ready = false; setText("modelState", "ERR"); showError("Lỗi xử lý AI: " + (error.message || error), 0); }
+    });
+  } catch (error) {
+    if (client.kind === "WORKER") void recoverAI(client, error);
+    else { client.ready = false; setText("modelState", "ERR"); showError("Lỗi xử lý AI: " + (error.message || error), 0); }
+  }
 }
 
-function onResult(m) {
+function onResult(m, sourceAI = ai) {
+  if (sourceAI !== ai) return; // bỏ callback cũ nếu đã chuyển Worker → fallback
+  if (m.session !== undefined && m.session !== cameraGeneration) return; // bỏ kết quả từ camera/session cũ
   cnt.ai++; const t0 = performance.now(); rec.push(m);
   if (m.faceOnly) return;
   if (t0 - m.ts - m.tAll > SCHED.staleMs) { T.stale++; return; }  // chỉ bỏ khi CHỜ/TRUYỀN quá lâu (backlog); AI chậm vẫn phải hiển thị
   T.infer = ema(T.infer, m.tAll); T.th = ema(T.th, m.tHand); M.ai.push(m.tAll);
   T.rtt = ema(T.rtt, t0 - m.ts); M.xfer.push(Math.max(0, t0 - m.ts - m.tAll));
-  if (m.tRecv && ai.tPost) { M.cap.push(ai.cap); M.xout.push(Math.max(0, m.tRecv - ai.tPost)); M.wq.push(Math.max(0, m.tH0 - m.tRecv)); M.back.push(Math.max(0, m.tRes - m.tSend)); }
+  if (m.tRecv && sourceAI?.tPost) { M.cap.push(sourceAI.cap); M.xout.push(Math.max(0, m.tRecv - sourceAI.tPost)); M.wq.push(Math.max(0, m.tH0 - m.tRecv)); M.back.push(Math.max(0, m.tRes - m.tSend)); }
   assign(m);
   noDet = m.nh ? 0 : noDet + 1;
   const dt = performance.now() - t0; T.filter = ema(T.filter, dt); M.gest.push(dt);
@@ -108,9 +222,9 @@ function assign(m) {
   slots.forEach((s, i) => { if (!used.has(i)) s.set.miss++; });
 }
 
-function loop(raf) {
-  if (!running) return;
-  requestAnimationFrame(loop); cnt.disp++;
+function loop(raf, token) {
+  if (!running || token !== cameraGeneration) return;
+  rafId = requestAnimationFrame((t) => loop(t, token)); cnt.disp++;
   const now = performance.now(), dt = Math.min(0.1, (raf - lastRaf) / 1000); lastRaf = raf;
   const r0 = now; rend.clear();
   const lead = (P.predict === "world" ? camLag / 1000 : 0) + 0.004;   // "video": bám khung hình đang hiển thị; "world": bám tay thật (dễ lệch trước video)
@@ -122,8 +236,9 @@ function loop(raf) {
   if (hands === 2) rend.lasers(slots[0].set, slots[1].set);
   ix.update(now, slots, rend.mirrored, canvas.width, canvas.height);   // vòng tròn đầu ngón ↔ nút trên màn hình
   const rt = performance.now() - r0; T.render = ema(T.render, rt); M.render.push(rt);
-  let ta = 0; for (const s of slots) if (s.set.alpha > .3 && s.set.tAge > ta) ta = s.set.tAge;
-  if (ta) { T.age = ema(T.age, now - ta); M.age.push(now - ta); }   // chỉ đo khi có tay (tránh nhiễm số 0 lúc chưa có dữ liệu)
+  let age = 0, hasAge = false;
+  for (const s of slots) if (s.set.alpha > .3 && s.set.tAge > 0) { age = Math.max(age, now - s.set.tAge); hasAge = true; }
+  if (hasAge) { T.age = ema(T.age, age); M.age.push(age); }   // tuổi của track CŨ NHẤT đang hiển thị; không nhiễm số 0 khi chưa có tay
   if (now - perfT > PERF.evalMs) { perfT = now; const lv = perf.update(now, { aiP95: M.ai.stats().p95, ageP95: M.age.stats().p95, renderP95: M.render.stats().p95 }); if (lv !== null) applyPerf(); }
   if (now - hudT > 250) hud(now, hands);
 }
@@ -175,15 +290,20 @@ async function pingRender() {
 }
 pingRender(); setInterval(pingRender, 60000);
 
-$("startBtn").onclick = $("startMain").onclick = async () => { await setProfile(pname); if (await ensureModel()) await startCamera(); };
+async function requestStart() {
+  if (startPromise) return startPromise;
+  startPromise = (async () => { await setProfile(pname); if (await ensureModel()) await startCamera(); })();
+  try { return await startPromise; } finally { startPromise = null; }
+}
+$("startBtn").onclick = $("startMain").onclick = requestStart;
 $("stopBtn").onclick = stopCamera; $("snapBtn").onclick = snapshot; $("profBtn").onclick = cycleProfile; $("styleBtn").onclick = cycleStyle;
 $("handBtn").onclick = () => toggle("hands", $("handBtn"));
 const toggleIx = () => { ix.on = !ix.on; $("uiBtn").classList.toggle("off", !ix.on); };
 $("uiBtn").onclick = toggleIx;
 $("fullBtn").onclick = $("fullMain").onclick = full;
-$("switchBtn").onclick = () => { facing = facing === "user" ? "environment" : "user"; if (running) startCamera(); };
+$("switchBtn").onclick = () => { facing = facing === "user" ? "environment" : "user"; if (running || cameraNeedsRetry) return startCamera(); };
 addEventListener("keydown", (e) => {
   const k = e.key.toLowerCase();
   if (k === "f") full(); else if (k === "c") $("switchBtn").click(); else if (k === "s") snapshot(); else if (k === "v") cycleStyle(); else if (k === "i") toggleIx();
-  else if (k === "p") cycleProfile(); else if (k === "t") $("tele").classList.toggle("hidden"); else if (k === "r") { if (!rec.toggle() && rec.rows.length) { const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(new Blob([rec.toJSONL()], { type: "application/jsonl" })), download: `replay-${Date.now()}.jsonl` }); a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); } showError(rec.on ? "● Đang ghi replay (R để dừng + tải)" : "Đã lưu replay", 2500); } else if (k === "h") $("handBtn").click(); else if (k === "e") $("headBtn").click();
+  else if (k === "p") cycleProfile(); else if (k === "t") $("tele").classList.toggle("hidden"); else if (k === "r") { if (!rec.toggle() && rec.rows.length) { const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(new Blob([rec.toJSONL()], { type: "application/jsonl" })), download: `replay-${Date.now()}.jsonl` }); a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); } showError(rec.on ? "● Đang ghi replay (R để dừng + tải)" : "Đã lưu replay", 2500); } else if (k === "h") $("handBtn").click();
 });
