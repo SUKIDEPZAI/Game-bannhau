@@ -1,8 +1,8 @@
 // ===== CẤU HÌNH TRUNG TÂM (v13) =====
-// 1) URL Render: đã nhập sẵn. Chạy trên chính domain Render/localhost thì tự dùng origin; còn lại (GitHub Pages, file://) dùng MANUAL.
-const MANUAL = "https://game-bannhau.onrender.com";   // không có "/" ở cuối
+// 1) API Render: same-origin when hosted on Render; otherwise configure SKELETON_CONFIG.renderUrl explicitly. Never point telemetry at another unrelated app.
+const MANUAL = String(globalThis.SKELETON_CONFIG?.renderUrl || "").trim().replace(/\/$/, "");   // optional: set SKELETON_CONFIG.renderUrl for a separate Render backend
 const loc = globalThis.location, host = loc?.hostname || "";   // an toàn khi import ngoài trình duyệt (test Node)
-export const RENDER_URL = loc && (host.endsWith("onrender.com") || host === "localhost" || host === "127.0.0.1") ? loc.origin : MANUAL;
+export const RENDER_URL = MANUAL || (loc && (host.endsWith("onrender.com") || host === "localhost" || host === "127.0.0.1") ? loc.origin : "");
 
 // 2) Profile (v14: KHÔNG còn skeleton đầu → faceFps luôn 0; style 0 = XƯƠNG mới): cam [rộng, cao, fps] · faceFps = tần số face (0 = tắt) · fx = hiệu ứng vẽ · predict = "video" (bám khung đang hiển thị) | "world"
 export const PROFILES = {

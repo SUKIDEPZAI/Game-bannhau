@@ -47,7 +47,44 @@ export class GestureAgent {
   snapshot() { return { mode: this.mode, speed: Math.round(this.speedEma * 100) / 100, stability: Math.round(this.stability * 100) / 100 }; }
 }
 
+// Agent #4: detect model/runtime degradation without adding inference calls.
+export class ModelHealthAgent {
+  constructor() { this.state = 'WARMUP'; this.reason = 'Đang chờ mẫu'; this.bad = 0; this.good = 0; }
+  observe({ delegate = 'UNKNOWN', aiP95 = 0, ageP95 = 0, missRate = 0, samples = 0 } = {}) {
+    if (samples < 8) return this.snapshot();
+    const reasons = [];
+    if (aiP95 > 80) reasons.push('inference chậm');
+    if (ageP95 > 150) reasons.push('kết quả cũ');
+    if (missRate > 0.35) reasons.push('mất tracking nhiều');
+    if (delegate === 'CPU') reasons.push('đang dùng CPU');
+    if (reasons.length) { this.bad++; this.good = 0; }
+    else { this.good++; this.bad = Math.max(0, this.bad - 1); }
+    if (this.bad >= 2) { this.state = 'DEGRADED'; this.reason = reasons.join(' · '); }
+    else if (this.good >= 4) { this.state = 'HEALTHY'; this.reason = 'Model/runtime ổn định'; }
+    return this.snapshot();
+  }
+  snapshot() { return { state: this.state, reason: this.reason }; }
+}
+
+// Agent #5: recommend conservative runtime settings from telemetry; does not change camera/model silently.
+export class AdaptiveConfigAgent {
+  constructor() { this.profile = 'ULTRA'; this.action = 'Giữ cấu hình hiện tại'; this.lastKey = ''; }
+  recommend({ aiP95 = 0, ageP95 = 0, renderP95 = 0, trackingScore = 100, delegate = 'UNKNOWN', samples = 0 } = {}) {
+    if (samples < 12) return this.snapshot();
+    let profile = 'ULTRA', action = 'Giữ ULTRA để ưu tiên độ trễ';
+    if (renderP95 > 10) action = 'Giảm glow/trails và hiệu ứng Canvas';
+    else if (aiP95 > 80 && delegate === 'CPU') action = 'Giữ input nhỏ; kiểm tra hỗ trợ GPU/WebGL và tải thiết bị';
+    else if (aiP95 > 80) action = 'Kiểm tra inference/model; tránh tăng độ phân giải';
+    else if (ageP95 > 120) action = 'Kiểm tra capture timestamp, frame queue và stale result';
+    else if (trackingScore < 55) action = 'Tăng sáng/cải thiện nền; chỉ tăng input khi latency còn dư';
+    else if (aiP95 < 25 && ageP95 < 60 && renderP95 < 5) { profile = 'BALANCED'; action = 'Có thể thử BALANCED A/B nếu cần chi tiết hơn'; }
+    this.profile = profile; this.action = action; this.lastKey = `${profile}:${action}`;
+    return this.snapshot();
+  }
+  snapshot() { return { profile: this.profile, action: this.action }; }
+}
+
 export class AIAgentSuite {
-  constructor() { this.latency = new LatencyAgent(); this.tracking = new TrackingQualityAgent(); this.gesture = new GestureAgent(); }
-  snapshot() { return { latency: this.latency.snapshot(), tracking: this.tracking.snapshot(), gesture: this.gesture.snapshot() }; }
+  constructor() { this.latency = new LatencyAgent(); this.tracking = new TrackingQualityAgent(); this.gesture = new GestureAgent(); this.modelHealth = new ModelHealthAgent(); this.adaptiveConfig = new AdaptiveConfigAgent(); }
+  snapshot() { return { latency: this.latency.snapshot(), tracking: this.tracking.snapshot(), gesture: this.gesture.snapshot(), modelHealth: this.modelHealth.snapshot(), adaptiveConfig: this.adaptiveConfig.snapshot() }; }
 }

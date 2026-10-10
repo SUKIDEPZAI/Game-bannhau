@@ -98,3 +98,54 @@ export class MainThreadAI {
     this.busy = true; queueMicrotask(() => { this.busy = false; this.onResult?.({ ts, tc, session, nh, hands: h, face: f, faceRan: !!o.face, faceOnly: false, last: true, tHand, tFace, tAll: performance.now() - t0 }); this.onIdle?.(); }); return true;
   }
 }
+
+// Experimental WebGPU model. If browser/device/CDN/weights fail, caller keeps or restores MediaPipe.
+export class MicroHandposeClient {
+  busy = false; ready = false; kind = 'MICRO'; modelId = 'micro'; delegate = 'WEBGPU'; onResult = null; onIdle = null; onFailure = null;
+  frameTimer = 0; initTimer = 0; frameId = 0; cap = 0; tPost = 0;
+  init() {
+    if (!globalThis.navigator?.gpu) return Promise.reject(new Error('WebGPU không khả dụng trên trình duyệt/thiết bị này'));
+    return new Promise((resolve, reject) => {
+      const w = this.w = new Worker(new URL('./micro-inference.worker.js', import.meta.url), { type: 'module', name: 'skeleton-micro-webgpu' });
+      let settled = false;
+      const fail = error => {
+        clearTimeout(this.initTimer); clearTimeout(this.frameTimer);
+        if (!this.ready) { if (!settled) { settled = true; reject(error); } w.terminate(); return; }
+        this.ready = false; this.busy = false; w.terminate(); this.onFailure?.(error);
+      };
+      this.initTimer = setTimeout(() => fail(new Error('WebGPU model init timeout')), 35000);
+      w.onmessage = ({ data: m }) => {
+        if (m.type === 'ready') {
+          clearTimeout(this.initTimer); this.initTimer = 0; this.ready = true; this.delegate = m.delegate || 'WEBGPU';
+          if (!settled) { settled = true; resolve(); }
+        } else if (m.type === 'error') fail(new Error(m.message || 'WebGPU model init failed'));
+        else if (m.type === 'frame-error') fail(new Error(m.message || 'WebGPU frame failed'));
+        else if (m.type === 'result') {
+          m.tRes = performance.timeOrigin + performance.now();
+          clearTimeout(this.frameTimer); this.frameTimer = 0; this.busy = false;
+          this.onResult?.(m); this.onIdle?.();
+        }
+      };
+      w.onerror = e => fail(new Error(e.message || 'WebGPU worker error'));
+      w.postMessage({ type: 'init' });
+    });
+  }
+  async submit(video, ts, _opts, tc = ts, session = 0) {
+    if (this.busy || !this.ready) return false;
+    this.busy = true; const id = ++this.frameId; const E = () => performance.timeOrigin + performance.now(); const t0 = E();
+    clearTimeout(this.frameTimer);
+    this.frameTimer = setTimeout(() => { if (id !== this.frameId || !this.busy) return; this.ready = false; this.busy = false; this.w?.terminate?.(); this.onFailure?.(new Error('WebGPU frame timeout')); }, 5000);
+    try {
+      let bmp;
+      try { bmp = await createImageBitmap(video, { resizeWidth: INFERENCE_FRAME.width, resizeHeight: INFERENCE_FRAME.height, resizeQuality: INFERENCE_FRAME.resizeQuality }); }
+      catch { bmp = await createImageBitmap(video); }
+      if (id !== this.frameId || !this.busy || !this.ready) { bmp.close?.(); return false; }
+      this.cap = E() - t0; this.tPost = E();
+      this.w.postMessage({ type: 'frame', ts, tc, session, bmp }, [bmp]); return true;
+    } catch (e) {
+      clearTimeout(this.frameTimer); this.frameTimer = 0; this.busy = false;
+      return false;
+    }
+  }
+  terminate() { clearTimeout(this.initTimer); clearTimeout(this.frameTimer); this.ready = false; this.busy = false; this.w?.terminate?.(); }
+}
