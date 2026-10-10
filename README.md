@@ -43,3 +43,19 @@ Bản audit/fix bổ sung: bảo vệ vòng đời camera bằng generation toke
 - **Skeleton mới "XƯƠNG"** (mặc định): xương bàn tay (cổ tay→gốc ngón) + đốt ngón, khớp tròn nhỏ dần về đầu ngón, mô lòng bàn tay; **mỗi đầu ngón là một vòng tròn màu**. Các kiểu NEON/WIRE/HOLO vẫn còn (nút 🎨 / phím `V`).
 - **Chạm nút bằng đầu ngón** (nút 👆 / phím `I` để bật/tắt): rê vòng tròn đầu ngón lên nút → nút sáng; **chỉ tay giữ yên ~0.7 s** → bấm (có vòng tiến trình); **chụm ngón cái + trỏ** → bấm ngay. Bàn tay xòe 5 ngón chỉ hover (chống bấm nhầm). Chỉnh trong `config.js` → `INTERACT`.
 - `npm test` (28 test sau audit v14) · `npm run e2e` (9 kịch bản mô phỏng, gồm fallback khi không có rVFC và camera restart thất bại) · `npm run preview` (xuất ảnh xem trước skeleton, cần python3 + Pillow).
+
+
+## v14 latency-focused patch (2026-10-10)
+- Default profile now starts in `ULTRA` (640×360@60) instead of `BALANCED` (960×540@60), matching the latency-first goal. Users can still switch profiles.
+- Inference input is resized to 480×270 before transfer to the Worker; preview/canvas stays at camera resolution. Since model landmarks are normalized, the mapping remains aligned when aspect ratio is preserved. If browser resize options are unsupported, the code falls back to the original bitmap. This trades some detection detail for lower inference cost and must be benchmarked on the target device.
+- This is a latency optimization attempt, not proof of sub-100ms or 1–10ms motion-to-photon. Check AI P95, AGE P95, CAPTURE, XFER→W and W→MAIN on real hardware.
+
+## v15 — Three local specialist agents
+
+`public/js/ai-agents.js` adds three lightweight, local adaptive decision systems:
+
+1. **Latency Agent** diagnoses whether measured P95 suggests inference, scheduling/age, rendering, or device bottlenecks and reports a next-step recommendation.
+2. **Tracking Quality Agent** scores landmark validity and missed detections conservatively.
+3. **Gesture Agent** classifies motion context (stable / normal / fast motion / cautious) for diagnostics.
+
+These are deterministic specialist controllers, **not three additional neural-network models**. They do not issue extra MediaPipe inference calls and are designed to avoid adding meaningful work to the latency-critical path. Their outputs are shown in the HUD. The existing MediaPipe HandLandmarker remains the actual learned pose model; changing to a larger neural model without real-device measurements could make the 100–300 ms latency worse.
