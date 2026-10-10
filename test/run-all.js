@@ -23,7 +23,17 @@ function pose({ ext = [1, 1, 1, 1], thumb = 1, pinch = false } = {}) {
 const asSet = (L) => { const x = new Float32Array(42); L.forEach((p, i) => { x[i * 2] = p.x; x[i * 2 + 1] = p.y; }); return { x }; };
 const settle = (g, L, t0 = 0, ms = 400) => { let l = ""; for (let t = t0; t <= t0 + ms; t += 16) l = g.update(asSet(L), 1, t, 0.3, true); return l; };
 
-test("config: URL Render đã nhập", () => assert.equal(RENDER_URL, "https://game-bannhau.onrender.com"));
+test("config: không gửi dữ liệu backend tới URL cứng của một ứng dụng khác", () => assert.equal(RENDER_URL, ""));
+test("config: URL Render riêng được trim và bỏ slash cuối", async () => {
+  const old = globalThis.SKELETON_CONFIG;
+  globalThis.SKELETON_CONFIG = { renderUrl: " https://skeleton-test.onrender.com/ " };
+  try {
+    const configured = await import(`../public/js/config.js?test=${Date.now()}`);
+    assert.equal(configured.RENDER_URL, "https://skeleton-test.onrender.com");
+  } finally {
+    if (old === undefined) delete globalThis.SKELETON_CONFIG; else globalThis.SKELETON_CONFIG = old;
+  }
+});
 
 test("cử chỉ tĩnh giữ nguyên bộ nhãn cũ", () => {
   const cases = [[{}, "Mở bàn tay"], [{ thumb: 0 }, "4 ngón"], [{ ext: [0, 0, 0, 0], thumb: 0 }, "Nắm đấm"], [{ ext: [0, 0, 0, 0], thumb: 1 }, "Like"],

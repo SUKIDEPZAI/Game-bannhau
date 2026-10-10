@@ -7,7 +7,7 @@ export async function e2e({ still = false, aiMs = 8, pingOk = false, workerFailF
   const els = {}, E = (id) => els[id] ??= el(id);
   let cb = null; const video = Object.assign(E("video"), { videoWidth: 960, videoHeight: 540, currentTime: 0, readyState: 4, srcObject: null, play: async () => {} });
   if (!noRvfc) video.requestVideoFrameCallback = (f) => { cb = f; };
-  Object.assign(g, { location: { hostname: "example.github.io", origin: "https://example.github.io" }, isSecureContext: true, addEventListener() {}, createImageBitmap: async () => ({ close() {} }),
+  Object.assign(g, { location: { hostname: "example.github.io", origin: "https://example.github.io" }, SKELETON_CONFIG: { renderUrl: pingOk ? "https://skeleton-test.onrender.com" : "" }, isSecureContext: true, addEventListener() {}, createImageBitmap: async () => ({ close() {} }),
     document: { querySelectorAll: () => (globalThis.__btns || []), getElementById: E, hidden: false, createElement: () => el("x"), documentElement: {}, fullscreenElement: null }, requestAnimationFrame: (f) => { log.raf++; return setTimeout(() => f(performance.now()), 1000 / 60); },
     fetch: async (u) => { if (!pingOk) throw new Error("offline"); if (String(u).includes("/ping")) return { ok: true, json: async () => ({ ok: true }) }; return { ok: true }; } });
   let cameraCalls = 0;

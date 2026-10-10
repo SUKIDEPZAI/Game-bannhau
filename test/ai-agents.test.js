@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { LatencyAgent, TrackingQualityAgent, GestureAgent, AIAgentSuite } from '../public/js/ai-agents.js';
+import { LatencyAgent, TrackingQualityAgent, GestureAgent, ModelHealthAgent, AdaptiveConfigAgent, AIAgentSuite } from '../public/js/ai-agents.js';
 
 test('LatencyAgent identifies inference, scheduling and render bottlenecks', () => {
   const a = new LatencyAgent();
@@ -22,7 +22,19 @@ test('GestureAgent stays finite and switches mode under fast motion / poor quali
   assert.equal(a.observe(0, 0.2).mode, 'CAUTIOUS');
   assert.ok(Number.isFinite(a.snapshot().stability));
 });
-test('AIAgentSuite exposes three isolated specialist agents', () => {
+test('ModelHealthAgent detects degraded runtime and recovers with stable samples', () => {
+  const a = new ModelHealthAgent();
+  for (let i = 0; i < 3; i++) a.observe({ delegate: 'CPU', aiP95: 100, ageP95: 180, missRate: 0.4, samples: 20 });
+  assert.equal(a.snapshot().state, 'DEGRADED');
+  for (let i = 0; i < 8; i++) a.observe({ delegate: 'GPU', aiP95: 15, ageP95: 35, missRate: 0.05, samples: 20 });
+  assert.equal(a.snapshot().state, 'HEALTHY');
+});
+test('AdaptiveConfigAgent gives recommendations without silently changing runtime', () => {
+  const a = new AdaptiveConfigAgent();
+  assert.equal(a.recommend({ aiP95: 100, ageP95: 20, samples: 20, delegate: 'CPU' }).profile, 'ULTRA');
+  assert.match(a.snapshot().action, /GPU|input|inference/i);
+});
+test('AIAgentSuite exposes five isolated specialist agents', () => {
   const s = new AIAgentSuite().snapshot();
-  assert.deepEqual(Object.keys(s), ['latency', 'tracking', 'gesture']);
+  assert.deepEqual(Object.keys(s), ['latency', 'tracking', 'gesture', 'modelHealth', 'adaptiveConfig']);
 });

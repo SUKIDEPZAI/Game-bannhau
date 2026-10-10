@@ -1,6 +1,6 @@
 // Mỗi kịch bản chạy trong 1 process riêng (module main.js có trạng thái toàn cục).
 import { spawnSync } from "node:child_process";
-const cases = { "bình thường": {}, "presentedFrames=undefined": { noPresented: true }, "không có requestVideoFrameCallback": { noRvfc: true }, "AI chậm 250ms (CPU delegate)": { aiMs: 250 }, "AI 60ms": { aiMs: 60 }, "ping OK + worker#0 lỗi (Render thiếu /vendor)": { pingOk: true, workerFailFirst: true }, "cam 30fps": { camFps: 30 }, "tay đứng yên trên nút (hover)": { still: true }, "đổi camera bị từ chối → dừng sạch": { restartFail: true, failCameraAfterFirst: true, expectCameraFailure: true } };
+const cases = { "bình thường": {}, "presentedFrames=undefined": { noPresented: true }, "không có requestVideoFrameCallback": { noRvfc: true }, "AI chậm 250ms (CPU delegate)": { aiMs: 250 }, "AI 60ms": { aiMs: 60 }, "Render OK + lỗi worker đầu → thử CDN dự phòng": { pingOk: true, workerFailFirst: true }, "cam 30fps": { camFps: 30 }, "tay đứng yên trên nút (hover)": { still: true }, "đổi camera bị từ chối → dừng sạch": { restartFail: true, failCameraAfterFirst: true, expectCameraFailure: true } };
 let bad = 0;
 for (const [n, o] of Object.entries(cases)) {
   const p = spawnSync("node", ["-e", `import("./test/e2e.js").then(async m=>{const r=await m.e2e(${JSON.stringify({ ...o, secs: 3 })});r.tele=undefined;console.log("@@"+JSON.stringify(r));process.exit(0)})`], { encoding: "utf8", timeout: 25000 });
