@@ -2,19 +2,20 @@ import { InferenceClient, MainThreadAI, pickSources } from "./inference.js";
 import { SmoothSet } from "./smoothing.js";
 import { GestureTracker, SwipeDetector } from "./gesture.js";
 import { Renderer, STYLES } from "./renderer.js";
-import { RENDER_URL, PROFILES, FILTER, TRACK, SCHED, PERF, INTERACT } from "./config.js";
+import { RENDER_URL, PROFILES, DEFAULT_PROFILE, FILTER, TRACK, SCHED, PERF, INTERACT } from "./config.js";
 import { Interact } from "./interact.js";
 import { Metric, fmtP, Recorder } from "./telemetry.js";
 import { PerfController } from "./perf.js";
 import { pickAssignment } from "./tracking.js";
+import { AIAgentSuite } from "./ai-agents.js";
 
 const $ = (id) => document.getElementById(id), setText = (id, t) => { const e = $(id); if (e) e.textContent = t; };
 const video = $("video"), canvas = $("overlay"), stage = $("stage"), rend = new Renderer(canvas);
 const common = { maxH: FILTER.maxHorizon, gapMs: FILTER.gapMs, reacqMs: FILTER.reacqRampMs, soft: FILTER.outlierSoft, hard: FILTER.outlierHard };
 const slots = [0, 1].map(() => ({ set: new SmoothSet(21, { ...FILTER.hand, ...common }), label: "", g: new GestureTracker(), sw: new SwipeDetector(), swipe: "", swipeT: -1e9 }));
 const M = Object.fromEntries(["ai", "age", "render", "xfer", "cap", "xout", "wq", "back", "gest"].map((k) => [k, new Metric()]));
-const rec = new Recorder(), perf = new PerfController(PERF); let perfT = 0, lastSubmitPf = -1, fm = { now: 0, cap: 0, pf: 0, n: 0 };
-let ai = null, modelPromise = null, startPromise = null, aiRecovery = false, pname = "BALANCED", P = PROFILES[pname], stream = null, running = false, facing = "user", lastRaf = 0, camLag = 25;
+const rec = new Recorder(), perf = new PerfController(PERF), agents = new AIAgentSuite(); let perfT = 0, lastSubmitPf = -1, fm = { now: 0, cap: 0, pf: 0, n: 0 };
+let ai = null, modelPromise = null, startPromise = null, aiRecovery = false, pname = DEFAULT_PROFILE, P = PROFILES[pname], stream = null, running = false, facing = "user", lastRaf = 0, camLag = 25;
 let cameraGeneration = 0, cameraNeedsRetry = false, rafId = 0, frameCbId = null, frameCbKind = "", fallbackFrameNo = 0, lastFallbackVideoTime = -1;
 const show = { hands: true };
 const ix = new Interact(canvas, INTERACT, () => document.querySelectorAll(INTERACT.selector));
@@ -199,6 +200,10 @@ function onResult(m, sourceAI = ai) {
   T.rtt = ema(T.rtt, t0 - m.ts); M.xfer.push(Math.max(0, t0 - m.ts - m.tAll));
   if (m.tRecv && sourceAI?.tPost) { M.cap.push(sourceAI.cap); M.xout.push(Math.max(0, m.tRecv - sourceAI.tPost)); M.wq.push(Math.max(0, m.tH0 - m.tRecv)); M.back.push(Math.max(0, m.tRes - m.tSend)); }
   assign(m);
+  const tracked = slots.find((s) => s.set.has && s.set.miss < TRACK.lostHideMiss);
+  const quality = agents.tracking.observe({ detected: !!m.nh, stale: false, landmarks: tracked ? tracked.set._t : null });
+  const speed = tracked ? Math.hypot(tracked.set.pv[0], tracked.set.pv[1]) / Math.max(tracked.set.scale, 0.03) : 0;
+  agents.gesture.observe(speed, quality.score / 100);
   noDet = m.nh ? 0 : noDet + 1;
   const dt = performance.now() - t0; T.filter = ema(T.filter, dt); M.gest.push(dt);
 }
@@ -239,7 +244,12 @@ function loop(raf, token) {
   let age = 0, hasAge = false;
   for (const s of slots) if (s.set.alpha > .3 && s.set.tAge > 0) { age = Math.max(age, now - s.set.tAge); hasAge = true; }
   if (hasAge) { T.age = ema(T.age, age); M.age.push(age); }   // tuổi của track CŨ NHẤT đang hiển thị; không nhiễm số 0 khi chưa có tay
-  if (now - perfT > PERF.evalMs) { perfT = now; const lv = perf.update(now, { aiP95: M.ai.stats().p95, ageP95: M.age.stats().p95, renderP95: M.render.stats().p95 }); if (lv !== null) applyPerf(); }
+  if (now - perfT > PERF.evalMs) {
+    perfT = now;
+    const lv = perf.update(now, { aiP95: M.ai.stats().p95, ageP95: M.age.stats().p95, renderP95: M.render.stats().p95 });
+    if (lv !== null) applyPerf();
+    agents.latency.update({ aiP95: M.ai.stats().p95, ageP95: M.age.stats().p95, renderP95: M.render.stats().p95, dropped: T.dropped, fps: T.aiFps, samples: M.ai.n || 0 });
+  }
   if (now - hudT > 250) hud(now, hands);
 }
 
@@ -264,7 +274,7 @@ RENDER   ${f(T.render)}  ${fmtP(M.render)}  [đo] CPU encode lệnh vẽ
 AGE      ${f(T.age)}  ${fmtP(M.age)}  [đo] từ lúc trình chiếu khung → vẽ
 EST TOTAL${f(total)}  [ước lượng] cam+age+render+½vsync (CHƯA phải motion-to-photon)
 TƯƠNG TÁC ${ix.on ? "BẬT" : "TẮT"} · bấm ${ix.clicks}
-FPS cam ${T.camFps.toFixed(0)} · ai ${T.aiFps.toFixed(0)} · hiển thị ${T.dispFps.toFixed(0)} · DROPPED ${T.dropped} · STALE ${T.stale}`;
+FPS cam ${T.camFps.toFixed(0)} · ai ${T.aiFps.toFixed(0)} · hiển thị ${T.dispFps.toFixed(0)} · DROPPED ${T.dropped} · STALE ${T.stale}\nAGENTS latency=${agents.latency.snapshot().state} · tracking=${agents.tracking.snapshot().score}%/${agents.tracking.snapshot().state} · gesture=${agents.gesture.snapshot().mode}\nADVICE ${agents.latency.snapshot().recommendation}`;
   if (noDet > 90) showError("AI chạy nhưng chưa thấy tay — đưa tay vào khung và đủ sáng.", 3000);
 }
 

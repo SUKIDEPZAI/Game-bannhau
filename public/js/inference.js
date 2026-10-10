@@ -1,6 +1,6 @@
 // Client: latest-frame-wins (tối đa 1 khung đang xử lý, khung đến khi bận bị BỎ chứ không xếp hàng) + fallback main thread.
 import { Engine } from "./engine.js";
-import { RENDER_URL } from "./config.js";
+import { RENDER_URL, INFERENCE_FRAME } from "./config.js";
 
 const CDN = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
 const GS = "https://storage.googleapis.com/mediapipe-models";
@@ -70,7 +70,12 @@ export class InferenceClient {
       this.w?.terminate?.(); this.onFailure?.(error);
     }, 5000);
     try {
-      const bmp = await createImageBitmap(video), t1 = E();
+      // Downscale only the inference input. The visible video/canvas keeps its native resolution;
+      // landmarks are normalized, so coordinates remain aligned when aspect ratio is preserved.
+      let bmp;
+      try { bmp = await createImageBitmap(video, { resizeWidth: INFERENCE_FRAME.width, resizeHeight: INFERENCE_FRAME.height, resizeQuality: INFERENCE_FRAME.resizeQuality }); }
+      catch { bmp = await createImageBitmap(video); } // compatibility fallback for older browsers
+      const t1 = E();
       if (id !== this.frameId || !this.busy || !this.ready) { bmp.close?.(); return false; }
       this.cap = t1 - t0; this.tPost = t1;
       this.w.postMessage({ type: "frame", ts, tc, session, bmp, ...opts }, [bmp]);

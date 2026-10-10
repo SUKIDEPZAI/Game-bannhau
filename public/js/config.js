@@ -12,6 +12,12 @@ export const PROFILES = {
 };
 
 // 3) Bộ lọc/dự đoán (đơn vị: toạ độ chuẩn hoá 0..1, giây). Nguồn: One Euro (Casiez 2012) + benchmark test/bench.js
+// Default to latency-first mode: do not start at 960x540 when the stated goal is sub-100ms responsiveness.
+export const DEFAULT_PROFILE = "ULTRA";
+// Run inference on a smaller bitmap while keeping the camera/display resolution independent.
+// Normalized landmarks remain compatible with the full-resolution preview.
+export const INFERENCE_FRAME = { width: 480, height: 270, resizeQuality: "low" };
+
 export const FILTER = {
   hand: { minCutoff: 1.6, beta: 40, dCutoff: 9, tau: 0.006 },   // chọn bằng test/sweep.js (Pareto): trội hơn 2.2/60/6 ở cả jitter lẫn lag. minCutoff↓ = êm hơn khi đứng yên; beta↑ = bớt trễ khi nhanh
   face: { minCutoff: 1.6, beta: 30, dCutoff: 5, tau: 0.012 },
