@@ -1,9 +1,43 @@
+# Skeleton v18 Blueprint. The web service keeps camera inference client-side.
+# Render Background Worker is separate so maintenance jobs never block camera/API traffic.
 services:
   - type: web
-    name: ai-hand-head-skeleton
+    name: skeleton-low-latency
     runtime: node
     plan: free
-    buildCommand: npm install
-    startCommand: node server.js
-    healthCheckPath: /ping
+    buildCommand: npm install && npm run vendor:wondersnap
+    startCommand: npm start
+    healthCheckPath: /healthz
     autoDeploy: true
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: skeleton-postgres
+          property: connectionString
+      - key: ADMIN_TOKEN
+        sync: false
+      - key: ALLOWED_ORIGIN
+        sync: false
+      - key: NODE_ENV
+        value: production
+
+  - type: worker
+    name: skeleton-jobs
+    runtime: node
+    plan: starter
+    buildCommand: npm install
+    startCommand: node jobs-worker.js
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: skeleton-postgres
+          property: connectionString
+      - key: NODE_ENV
+        value: production
+
+databases:
+  - name: skeleton-postgres
+    databaseName: skeleton
+    user: skeleton
+    plan: basic-256mb

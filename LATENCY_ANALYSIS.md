@@ -106,3 +106,8 @@ Trễ pha ≈ 1/(2π·fc), fc = minCutoff + β·|v|. Tay đứng yên (minCutoff
 | Ngón di chuyển nhẹ | 1.8 | 40 | ưu tiên hết rung |
 | Mặt | 1.6 | 30 | thứ yếu |
 So sánh: *không lọc* = 0 trễ + rung; *EMA* = trễ cố định; *Kalman* = tốt khi mô hình nhiễu đúng, tốn tinh chỉnh; *velocity prediction* = bù trễ nhưng khuếch đại nhiễu → cần kẹp/ramp; **One Euro + prediction có kẹp** là lựa chọn thực tế nhất.
+
+
+## v19 integration note
+
+WonderSnap is served as an isolated route to prevent its WebGL2 particle workload from interfering with Skeleton tracking. It is fetched from upstream during the Render web build; it was not downloaded into this local archive because shell network access to GitHub was unavailable. See `docs/WONDERSNAP_INTEGRATION.md`.

@@ -1,6 +1,6 @@
 {
   "name": "ai-hand-skeleton",
-  "version": "15.0.0",
+  "version": "19.0.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -12,11 +12,14 @@
     "bench": "node test/bench.js",
     "e2e": "node test/e2e-matrix.js",
     "sweep": "node test/sweep.js",
-    "preview": "node test/render-preview.mjs && python3 test/preview.py"
+    "preview": "node test/render-preview.mjs && python3 test/preview.py",
+    "vendor:wondersnap": "node scripts/vendor-wondersnap.mjs"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "0.10.14",
     "compression": "^1.7.4",
-    "express": "^4.19.2"
-  }
+    "express": "^4.19.2",
+    "pg": "^8.13.1"
+  },
+  "description": "Low-latency hand tracking with specialist agents, WebGPU model A/B and Render/PostgreSQL job worker"
 }

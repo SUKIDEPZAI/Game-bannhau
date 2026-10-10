@@ -1,61 +1,95 @@
-# AI Hand Skeleton — gói tất cả trong một
+# Skeleton v18 — Low-Latency Performance Lab
 
+Focus: realtime hand tracking on Android, frame freshness, smooth rendering, model A/B benchmarks, and non-blocking Render/PostgreSQL maintenance tasks.
+
+## What's new in v18
+
+- **15 specialist managers + 1 self-review manager (16 total):** camera/capture, model, scheduler, tracking, smoothing, identity, gesture, fingertip interaction, renderer, performance, telemetry, Render API, PostgreSQL, jobs, reliability, plus cross-agent contradiction review. These are cheap, deterministic rule-based supervisors—not 16 extra neural networks—and do not run inference in the camera-frame loop.
+- **Adaptive smoothing:** bounded adjustment of One Euro `beta` according to movement speed and tracking score; changes ease toward a target rather than jump frame-to-frame.
+- **Model A/B:** Model A is the existing MediaPipe GPU-first/CPU fallback. Model B is an experimental `@svenflow/micro-handpose@0.3.0` WebGPU module worker, loaded only when selected. It measures model inference P50/P95, capture-to-result age P95, detection rate, and sample count on the same camera/device. Benchmark warms each model for 1.8 s, measures each phase for 10 s, and restores MediaPipe even when stopped/cancelled. The experiment may fail due to WebGPU, CDN/CORS, memory or browser support; in that case MediaPipe stays/restores as fallback.
+- **Latest-frame-wins stays:** at most one frame per model worker; stale inference results do not queue up. Render updates continue independently.
+- **Backend safety:** PostgreSQL stores aggregate metrics and queued jobs only; no frames, camera images or landmarks are sent to the server. Uploading summary metrics is **off by default**; it requires the user to check a consent box and then sends a summary at most once per 60 seconds while tracking. `/api/status`, `/healthz`, `/version.json`; HTML uses `no-store` to reduce stale-deployment confusion.
+- **Dedicated Render job worker:** jobs run in `jobs-worker.js`, not the web request process. `FOR UPDATE SKIP LOCKED`, bounded kinds/payloads, retries, and stale-running recovery.
+- **API controls:** metrics ingestion rate limit, bounded JSON body and metric validation, admin-token guard for job management, security response headers.
+
+## Local run
+
+```bash
+npm install
+npm start
 ```
-server.js  package.json  render.yaml   ← Render (Free Web Service)
-public/                                  ← giao diện (index.html, css/, js/)
-```
 
-## Cách 1 — chạy hết trên Render
-Push repo → Render → New → Blueprint (đọc `render.yaml`, plan Free) → mở `https://<tên>.onrender.com`. Không cần cấu hình thêm.
+Open `http://localhost:3000`; grant camera permission. Click **LAB** to open Performance Lab. The stable baseline is MediaPipe. Try Model B or run A/B only if WebGPU is available. Model B is an experiment, not an automatic replacement.
 
-## Cách 2 — giao diện trên GitHub Pages, Render làm backend
-1. Deploy repo lên Render như trên, copy URL.
-2. Mở `public/js/config.js` — `MANUAL` đã được điền sẵn `https://game-bannhau.onrender.com` (đổi nếu service Render của bạn khác tên; nếu dùng Blueprint, sửa `name` trong `render.yaml` cho khớp để không tạo service thứ hai).
-3. Đưa nội dung thư mục `public/` (kèm `.nojekyll`) lên GitHub Pages (Settings → Pages → `main` + `/ (root)`).
-Render ngủ thì trang tự dùng CDN, không phải chờ.
+With PostgreSQL locally, set `DATABASE_URL`. For local-only job execution, set `RUN_INLINE_JOBS=true`; in production use the dedicated background worker below.
 
-## Server
-`/ping` đo RTT · `/vendor` + `/models` (CORS, nén, cache 1 năm) · tự ping chính nó mỗi 60s (`KEEPALIVE_MS`) · `ALLOWED_ORIGIN` giới hạn domain.
-Tự ping không đánh thức service đang ngủ → thêm UptimeRobot/cron-job.org gọi `/ping` mỗi 5 phút làm dự phòng.
+## Render deployment
 
-## Bù trễ
-Vị trí vẽ = vị trí lọc + vận tốc × (độ trễ camera đo thật từ `requestVideoFrameCallback` + thời gian AI + 1 frame).
+1. Push this folder to the repository used by Render.
+2. Choose **New → Blueprint** and point it at `render.yaml`.
+3. Set `ADMIN_TOKEN` to a long random secret. Set `ALLOWED_ORIGIN` to your exact web origin(s), comma-separated; use `*` only if public cross-origin access is deliberate. The old hard-coded URL to an unrelated app was removed: if the front end is not itself served from Render, set `window.SKELETON_CONFIG.renderUrl` in the inline configuration block in `public/index.html` to your own Skeleton Render URL. Leave it blank if no separate backend should be contacted.
+4. The Blueprint declares a Free web service, a PostgreSQL database (`basic-256mb`), and a Starter background worker. **The database and Starter worker are paid resources and can incur charges**; review current Render pricing and plans before applying the Blueprint. If you don't want a separate worker, deploy only the web service and run `RUN_INLINE_JOBS=true` (less isolated; not recommended for heavier jobs).
+5. Verify `/version.json`, `/healthz` and `/api/status` after deploy. Hard refresh once; the HTML document is configured not to be cached.
+
+## API
+
+- `GET /ping`: fast liveness endpoint for Render wake-up/RTT checks.
+- `GET /healthz`: DB-aware service health. It reports `starting` while schema initialization is retrying.
+- `GET /version.json`: active deployed version/build.
+- `GET /api/status`: version, database status and queued/failed job counts.
+- `POST /api/sessions/metrics`: accepts coarse summary metrics only, rate-limited. Client must send this explicitly; camera frames are never uploaded.
+- `POST /api/jobs` and `GET /api/jobs/:id`: require `Authorization: Bearer $ADMIN_TOKEN`. Allowed kinds: `cleanup_metrics`, `rebuild_stats`, `health_check`.
+
+## Measuring latency on Android
+
+1. Use the exact same device, camera, room lighting, hand distance and browser tab; keep power mode the same and avoid recording/screen casting.
+2. Start the camera and wait 5 seconds for warm-up.
+3. Open **LAB → Chạy A/B**. The test excludes the first 1.8 seconds of each model phase and collects the next 10 seconds. Loading/cold-start time is not mixed into inference P95.
+4. Compare **P95** and detection rate, not only average/P50. A faster model with a worse detection rate is not automatically better.
+5. Repeat at least three times. WebGPU results vary by Android version, chipset, Chrome build and thermal throttling.
+6. This benchmark measures inference and the age of returned results. It does **not** measure true motion-to-photon latency; that requires external high-speed video/LED instrumentation or a validated end-to-end method.
+
+The previous and candidate models are not executed simultaneously, to avoid contention and memory pressure. A/B phases are sequential; repeat runs to control for warming/thermal bias.
+
+## Source-driven research / design decisions
+
+The reasoning trail, mapping of each feature to its sources, and self-critique/fix log are in [`docs/V18_RESEARCH_AND_SELF_CRITIQUE.md`](docs/V18_RESEARCH_AND_SELF_CRITIQUE.md).
+
+1. Google MediaPipe Hand Landmarker Web docs: `detectForVideo()` is synchronous on the calling thread; using a worker protects UI responsiveness.
+2. `requestVideoFrameCallback()` supplies video-frame timing metadata and is preferred over arbitrary `timeupdate`/display callbacks.
+3. Transferable `ImageBitmap` reduces copying across worker boundaries.
+4. `OffscreenCanvas` is a browser-supported path for worker-side canvas processing where applicable.
+5. One Euro Filter provides speed-adaptive low-pass filtering to trade jitter against lag.
+6. `micro-handpose` 0.3.0: WebGPU, ROI tracking and 21 normalized hand landmarks; upstream benchmarks are vendor-published, not Android results for this app.
+7. `webgpu-vision`: a separate WebGPU/ONNX Runtime Web architecture and explicit benchmark/A-B harness to compare against.
+8. TensorFlow.js hand-pose detection offers lite/full trade-offs and WebGL/MediaPipe runtimes; kept as a future alternative rather than loaded in parallel now.
+9. WebGPU support varies by browser/OS/GPU; capability detection and a MediaPipe fallback are mandatory.
+10. Render Background Workers isolate queued asynchronous work from web request handling.
+11. Render Cron Jobs fit periodic cleanup/maintenance tasks; not per-frame work.
+12. Render Postgres connection pooling helps only for matching connection/concurrency patterns; camera inference must not depend on DB.
+13. PostgreSQL `SKIP LOCKED` is used for concurrent-safe work claiming and avoids two workers claiming the same queue item.
+14. `PerformanceObserver` and browser performance timing APIs can extend client telemetry; sample/aggregate rather than send every frame.
+15. Express guidance recommends limiting request body sizes, guarding admin routes, and rate limiting public endpoints.
+
+References:
+- https://developers.google.com/edge/mediapipe/solutions/vision/hand_landmarker/web_js
+- https://developer.mozilla.org/en-US/docs/Web/API/HTMLVideoElement/requestVideoFrameCallback
+- https://developer.mozilla.org/en-US/docs/Web/API/OffscreenCanvas
+- https://github.com/svenflow/micro-handpose
+- https://github.com/Sonified/webgpu-vision
+- https://github.com/tensorflow/tfjs-models/tree/master/hand-pose-detection
+- https://web.dev/blog/webgpu-supported-major-browsers
+- https://render.com/docs/background-workers
+- https://render.com/docs/cronjobs
+- https://render.com/docs/postgresql-connection-pooling
+- https://www.postgresql.org/docs/current/sql-select.html
+- https://expressjs.com/en/advanced/best-practice-security.html
+
+## Verification status
+
+Current local verification: 48/48 unit/contract tests pass; 9/9 simulated E2E scenarios pass; `npm run bench` and `npm run sweep` run deterministic simulations. The container had no `node_modules`, and `npm install --no-audit --no-fund` timed out, so a live Express/PostgreSQL smoke test was not run here. Node tests and simulated E2E can verify logic/contract regressions; they cannot establish camera motion-to-photon latency or validate WebGPU on your Android device. Model B is therefore visibly marked experimental until the on-device A/B report confirms both latency and detection rate.
 
 
-## v12 — pipeline độ trễ thấp
-Camera → rVFC (latest-frame-wins) → ImageBitmap → **classic Worker** (MediaPipe) → Float32Array → filter+predict → rAF → Canvas 2D.
-Phím: `P` profile (ULTRA/BALANCED/QUALITY) · `T` bật/tắt telemetry · `V` phong cách · `H` tay · `I` bật/tắt chạm nút bằng đầu ngón · `R` ghi/dừng replay · `S` chụp · `C` camera · `F` fullscreen. v14 không còn chức năng theo dõi đầu/mặt nên phím `E` đã bị loại bỏ.
-Phân tích chi tiết: `LATENCY_ANALYSIS.md`.
+## WonderSnap 3D mode (v19)
 
-
-## v13 — nâng cấp tracking / độ trễ / cử chỉ
-Chi tiết, bằng chứng và hạn chế: `docs/UPGRADE_V13.md` · số liệu benchmark: `docs/bench-output.txt`.
-- `npm test` (16 test ở mốc v13) · `npm run e2e` (trình duyệt giả, 6 kịch bản ở mốc v13) · `npm run bench` (A/B v12 vs v13) · `npm run sweep` (Pareto tham số lọc). Không cần cài thêm gì.
-- Phím mới: `R` ghi/dừng replay (tải file `.jsonl` landmark thô + timestamp). `T` hiện telemetry P50/P95/P99/MAX.
-- Mọi hằng số quan trọng nằm trong `public/js/config.js` (có chú thích).
-
-
-## v14 — skeleton xương + chạm nút bằng đầu ngón tay
-
-Bản audit/fix bổ sung: bảo vệ vòng đời camera bằng generation token, fallback RAF khi thiếu `requestVideoFrameCallback`, timeout/khôi phục khi Worker lỗi lúc đang chạy, reset tracking/telemetry khi đổi camera, bỏ nạp FaceLandmarker không dùng trong fallback, sửa hotkey `E` cũ và đo AGE theo track cũ nhất. Xem `docs/UPGRADE_V14_AUDIT.md` để biết chi tiết và giới hạn kiểm chứng.
-- Fallback main-thread chỉ tải HandLandmarker; không nạp FaceLandmarker khi Worker thất bại. Camera restart có generation guard, hủy callback cũ, fallback RAF khi thiếu `requestVideoFrameCallback`; AGE lấy track cũ nhất đang hiển thị.
-- **Bỏ skeleton đầu/mặt** (không còn nạp model face → nhẹ hơn, hand luôn được ưu tiên).
-- **Skeleton mới "XƯƠNG"** (mặc định): xương bàn tay (cổ tay→gốc ngón) + đốt ngón, khớp tròn nhỏ dần về đầu ngón, mô lòng bàn tay; **mỗi đầu ngón là một vòng tròn màu**. Các kiểu NEON/WIRE/HOLO vẫn còn (nút 🎨 / phím `V`).
-- **Chạm nút bằng đầu ngón** (nút 👆 / phím `I` để bật/tắt): rê vòng tròn đầu ngón lên nút → nút sáng; **chỉ tay giữ yên ~0.7 s** → bấm (có vòng tiến trình); **chụm ngón cái + trỏ** → bấm ngay. Bàn tay xòe 5 ngón chỉ hover (chống bấm nhầm). Chỉnh trong `config.js` → `INTERACT`.
-- `npm test` (28 test sau audit v14) · `npm run e2e` (9 kịch bản mô phỏng, gồm fallback khi không có rVFC và camera restart thất bại) · `npm run preview` (xuất ảnh xem trước skeleton, cần python3 + Pillow).
-
-
-## v14 latency-focused patch (2026-10-10)
-- Default profile now starts in `ULTRA` (640×360@60) instead of `BALANCED` (960×540@60), matching the latency-first goal. Users can still switch profiles.
-- Inference input is resized to 480×270 before transfer to the Worker; preview/canvas stays at camera resolution. Since model landmarks are normalized, the mapping remains aligned when aspect ratio is preserved. If browser resize options are unsupported, the code falls back to the original bitmap. This trades some detection detail for lower inference cost and must be benchmarked on the target device.
-- This is a latency optimization attempt, not proof of sub-100ms or 1–10ms motion-to-photon. Check AI P95, AGE P95, CAPTURE, XFER→W and W→MAIN on real hardware.
-
-## v15 — Three local specialist agents
-
-`public/js/ai-agents.js` adds three lightweight, local adaptive decision systems:
-
-1. **Latency Agent** diagnoses whether measured P95 suggests inference, scheduling/age, rendering, or device bottlenecks and reports a next-step recommendation.
-2. **Tracking Quality Agent** scores landmark validity and missed detections conservatively.
-3. **Gesture Agent** classifies motion context (stable / normal / fast motion / cautious) for diagnostics.
-
-These are deterministic specialist controllers, **not three additional neural-network models**. They do not issue extra MediaPipe inference calls and are designed to avoid adding meaningful work to the latency-critical path. Their outputs are shown in the HUD. The existing MediaPipe HandLandmarker remains the actual learned pose model; changing to a larger neural model without real-device measurements could make the 100–300 ms latency worse.
+The Render web build vendors the MIT-licensed [WonderSnap project](https://github.com/AkbarSheikh-debug/wondersnap) and serves it at `/wondersnap/`. Use the WONDER link in the main screen. On Android, stop Skeleton tracking before starting WonderSnap to avoid two concurrent camera/GPU loops. See `docs/WONDERSNAP_INTEGRATION.md`.
