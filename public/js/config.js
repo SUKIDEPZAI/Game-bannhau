@@ -39,9 +39,10 @@ export const TRACK = {
 
 // 5) Cử chỉ: mọi thời gian bằng ms, có hysteresis (EXIT khác ENTER)
 export const GESTURE = {
-  extEnter: 1.15, extExit: 1.06,        // tỉ lệ |tip−wrist| / |pip−wrist| để coi là DUỖI / GẬP
-  pinchEnter: 0.28, pinchExit: 0.38,    // khoảng cách ngón cái–trỏ / kích thước bàn tay
-  confirmMs: 90, confirmFastMs: 45, confirmStillMs: 130, fastSpeed: 1.0, stillSpeed: 0.1,   // thời gian xác nhận theo tốc độ (hand-widths/s)
+  fingerAngleEnter: 150, fingerAngleExit: 132, fingerLengthEnter: 0.63, fingerLengthExit: 0.52, // góc PIP + độ dài ngón / bề rộng lòng bàn tay
+  thumbAngleEnter: 142, thumbAngleExit: 122, thumbSpanEnter: 0.58, thumbSpanExit: 0.46, // ngón cái duỗi + tách khỏi bàn tay
+  pinchEnter: 0.27, pinchExit: 0.36,    // khoảng cách ngón cái–trỏ / bề rộng lòng bàn tay
+  confirmMs: 58, confirmFastMs: 32, confirmStillMs: 88, fastSpeed: 1.0, stillSpeed: 0.1,   // xác nhận nhanh nhưng không đổi nhãn theo một khung nhiễu
   swipe: { windowMs: 280, minDisp: 2.0, minPeak: 4.0, minStraight: 0.8, cooldownMs: 500 }
 };
 

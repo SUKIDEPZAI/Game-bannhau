@@ -3,7 +3,7 @@ const SHATTER_SVG = `<svg viewBox="0 0 1000 1000" preserveAspectRatio="none" ari
 export class EffectLayer {
   constructor(root = document.getElementById("gestureEffects")) { this.root = root; this.lastPlay = new Map(); }
   play(name, duration = 1200, { cooldown = 250 } = {}) {
-    if (!this.root || !["shatter", "burst", "confetti", "rainbow", "hearts", "shockwave", "slash"].includes(name)) return false;
+    if (!this.root || !["shatter", "burst", "confetti", "rainbow", "hearts", "shockwave", "slash", "ok"].includes(name)) return false;
     const now = performance.now();
     if (now - (this.lastPlay.get(name) ?? -Infinity) < cooldown) return false;
     this.lastPlay.set(name, now);
@@ -16,6 +16,7 @@ export class EffectLayer {
     else if (name === "hearts") el.innerHTML = `♥ <i>♥</i><b>♥</b><em>♥</em>`;
     else if (name === "shockwave") el.innerHTML = `<i></i><b></b><em></em>`;
     else if (name === "slash") el.innerHTML = `<i></i><b></b>`;
+    else if (name === "ok") el.innerHTML = `<div class="ok-target"><i></i><b></b><em>OK</em></div>`;
     this.root.append(el);
     const cleanupMs = name === "shatter" ? 3000 : duration;
     setTimeout(() => el.remove(), cleanupMs + 100);

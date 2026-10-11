@@ -32,7 +32,7 @@ export class Engine {
       }
       throw new Error(`Không tạo được model ${name}`);
     };
-    this.hands = await build("hand", mod.HandLandmarker, { numHands: 2, minHandDetectionConfidence: .4, minHandPresenceConfidence: .4, minTrackingConfidence: .4 });
+    this.hands = await build("hand", mod.HandLandmarker, { numHands: 2, minHandDetectionConfidence: .5, minHandPresenceConfidence: .5, minTrackingConfidence: .5 });
     this.handConn = mod.HandLandmarker.HAND_CONNECTIONS;
     if (loadFace) {
       this.face = await build("face", mod.FaceLandmarker, { numFaces: 1, minFaceDetectionConfidence: .4, minFacePresenceConfidence: .4, minTrackingConfidence: .4 });

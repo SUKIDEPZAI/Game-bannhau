@@ -15,8 +15,8 @@ import { MeetingClient } from "./meeting.js";
 const $ = (id) => document.getElementById(id), setText = (id, t) => { const e = $(id); if (e) e.textContent = t; };
 const video = $("video"), canvas = $("overlay"), stage = $("stage"), rend = new Renderer(canvas);
 const common = { maxH: FILTER.maxHorizon, gapMs: FILTER.gapMs, reacqMs: FILTER.reacqRampMs, soft: FILTER.outlierSoft, hard: FILTER.outlierHard };
-const slots = [0, 1].map(() => ({ set: new SmoothSet(21, { ...FILTER.hand, ...common }), label: "", g: new GestureTracker(), sw: new SwipeDetector(), swipe: "", swipeT: -1e9, gunPose: false, gunStartScale: 0, gunStartAt: 0, actionCooldown: 0, lastActionLabel: "" }));
-const M = Object.fromEntries(["ai", "age", "render", "xfer", "cap", "xout", "wq", "back", "gest"].map((k) => [k, new Metric()]));
+const slots = [0, 1].map(() => ({ set: new SmoothSet(21, { ...FILTER.hand, ...common }), label: "", g: new GestureTracker(), sw: new SwipeDetector(), swipe: "", swipeT: -1e9, gunPose: false, gunStartScale: 0, gunStartAt: 0, actionCooldown: 0, gunArmed: true, lastActionLabel: "" }));
+const M = Object.fromEntries(["ai", "age", "render", "xfer", "cap", "xout", "wq", "back", "gest", "pose"].map((k) => [k, new Metric()]));
 const rec = new Recorder(), perf = new PerfController(PERF), agents = new AIAgentSuite(), domainAgents = new AgentOrchestrator(), abBench = new ABBenchmark(), abWait = new InterruptibleWait(); let perfT = 0, lastSubmitPf = -1, fm = { now: 0, cap: 0, pf: 0, n: 0 };
 let ai = null, activeModel = "mediapipe", modelPromise = null, startPromise = null, aiRecovery = false, abPromise = null, backendStatus = "UNKNOWN", databaseStatus = "unknown", jobsStatus = "ok", panelOpen = false, lastAgentUi = 0, pname = DEFAULT_PROFILE, P = PROFILES[pname], stream = null, running = false, facing = "user", lastRaf = 0, camLag = 25;
 let cameraGeneration = 0, cameraNeedsRetry = false, rafId = 0, frameCbId = null, frameCbKind = "", fallbackFrameNo = 0, lastFallbackVideoTime = -1, lastMetricsPostAt = 0, metricsPostBusy = false;
@@ -40,7 +40,7 @@ const meeting = new MeetingClient({
 });
 globalThis.__skel = { slots, fm, ix, agents: domainAgents, abBench };
 Object.defineProperty(globalThis.__skel, "running", { get: () => running }); // phục vụ test/E2E & gỡ lỗi trong Console
-const T = { stale: 0, cam: 0, infer: 0, th: 0, rtt: 0, filter: 0, render: 0, age: 0, camFps: 0, aiFps: 0, dispFps: 0, dropped: 0, res: "—" };
+const T = { stale: 0, cam: 0, infer: 0, th: 0, rtt: 0, filter: 0, pose: 0, render: 0, age: 0, camFps: 0, aiFps: 0, dispFps: 0, dropped: 0, res: "—" };
 const cnt = { cam: 0, ai: 0, disp: 0 }; let cntT = performance.now(), hudT = 0, noDet = 0;
 const ema = (cur, v, k = 0.2) => cur + (v - cur) * k;
 
@@ -81,7 +81,7 @@ function activateAI(client, modelId) {
   ai = client; activeModel = modelId; client.modelId = modelId;
   bindAI(client);
   if (previous && previous !== client) { try { previous.terminate?.(); previous.w?.terminate?.(); } catch {} }
-  if (running) { resetTracking(); for (const k of ["ai", "age", "xfer", "cap", "xout", "wq", "back", "gest"]) M[k].reset(); }
+  if (running) { resetTracking(); for (const k of ["ai", "age", "xfer", "cap", "xout", "wq", "back", "gest", "pose"]) M[k].reset(); }
   setText("modelState", `${modelId === "micro" ? "MICRO" : client.kind}/${client.delegate || "?"}`);
   setText("activeModelLabel", modelId === "micro" ? "Model B · WebGPU" : "Model A · MediaPipe");
   setText("modelSwitchBtn", modelId === "micro" ? "Dùng Model A · MediaPipe" : "Thử Model B · WebGPU");
@@ -149,13 +149,13 @@ function cancelPumps() {
 }
 function resetTracking() {
   for (const s of slots) {
-    s.set.reset(); s.g.reset(); s.sw.reset(); s.label = ""; s.swipe = ""; s.swipeT = -1e9; s.gunPose = false; s.gunStartScale = 0; s.gunStartAt = 0; s.lastActionLabel = "";
+    s.set.reset(); s.g.reset(); s.sw.reset(); s.label = ""; s.swipe = ""; s.swipeT = -1e9; s.gunPose = false; s.gunStartScale = 0; s.gunStartAt = 0; s.gunArmed = true; s.lastActionLabel = "";
   }
   ix.clearVisuals?.(slots);
 }
 function resetTelemetry(now = performance.now()) {
   for (const metric of Object.values(M)) metric.reset();
-  Object.assign(T, { stale: 0, cam: 0, infer: 0, th: 0, rtt: 0, filter: 0, render: 0, age: 0, camFps: 0, aiFps: 0, dispFps: 0, dropped: 0, res: "—" });
+  Object.assign(T, { stale: 0, cam: 0, infer: 0, th: 0, rtt: 0, filter: 0, pose: 0, render: 0, age: 0, camFps: 0, aiFps: 0, dispFps: 0, dropped: 0, res: "—" });
   cnt.cam = cnt.ai = cnt.disp = 0; cntT = now; hudT = 0; camLag = 25;
   fm.now = 0; fm.cap = 0; fm.pf = 0; fm.n = 0;
   perf.reset(now); perf.applyFx(rend.fx, P.fx); setText("prof", pname);
@@ -288,32 +288,42 @@ function assign(m) {
   const used = new Set();
   dets.slice(0, 2).forEach((o, i) => {
     const s = slots[pick[i]]; used.add(pick[i]);
-    if ((m.tc - s.set.last) > FILTER.gapMs) { s.g.reset(); s.sw.reset(); }
+    if ((m.tc - s.set.last) > FILTER.gapMs) { s.g.reset(); s.sw.reset(); s.label = ""; s.lastActionLabel = ""; s.gunPose = false; s.gunArmed = true; }
     s.set.pushPacked(H, o, m.tc, m.ts);
     const st = s.set, sp = Math.hypot(st.pv[0], st.pv[1]) / Math.max(st.scale, 0.03), ok = st.pe < 0.3 && st.reacq < 0.5;
+    const poseStart = performance.now();
     s.label = s.g.update(st, aspect, m.tc, sp, ok);
-    // Gun pose = index extended + thumb extended + middle/ring/pinky folded.
-    // A shot is inferred only when the hand rapidly grows in frame while the pose is held.
-    const e = s.g.ext, gunPose = !!s.g.thumb && e[0] === 1 && e[1] === 0 && e[2] === 0 && e[3] === 0;
-    if (ok && gunPose) {
-      if (!s.gunPose || m.tc - s.gunStartAt > 420) { s.gunStartScale = st.scale; s.gunStartAt = m.tc; }
-      else if (m.tc - s.gunStartAt >= 65 && m.tc - s.gunStartAt <= 420 && st.scale > s.gunStartScale * 1.28 && m.tc > s.actionCooldown) {
-        effects.play("shatter", 3000, { cooldown: 1200 }); s.actionCooldown = m.tc + 1200; s.gunStartAt = m.tc; s.gunStartScale = st.scale; setText("actionHint", "BẮN! · NỨT KÍNH 3 GIÂY");
-      }
-    } else { s.gunStartScale = st.scale; s.gunStartAt = m.tc; }
+    const poseMs = performance.now() - poseStart; T.pose = ema(T.pose, poseMs, 0.25); M.pose.push(poseMs);
+    // Gun action is two-stage: a confirmed gun pose arms one shot; a quick >18% palm-size increase
+    // within 500 ms triggers the 3 s cracked-glass overlay. Re-arm only after a small pull-back.
+    const gunPose = ok && s.g.actionable && s.g.raw === "Súng" && s.label === "Súng" && s.g.ext[0] === 1 && s.g.ext[1] === 0 && s.g.ext[2] === 0 && s.g.ext[3] === 0 && s.g.thumb === 1;
+    if (gunPose) {
+      if (!s.gunPose) { s.gunStartScale = st.scale; s.gunStartAt = m.tc; s.gunArmed = true; }
+      const elapsed = m.tc - s.gunStartAt, ratio = st.scale / Math.max(s.gunStartScale, 0.02);
+      if (s.gunArmed && elapsed >= 45 && elapsed <= 500 && ratio >= 1.18 && m.tc > s.actionCooldown) {
+        effects.play("shatter", 3000, { cooldown: 1200 }); s.actionCooldown = m.tc + 1200; s.gunArmed = false; setText("actionHint", "BẮN TRÚNG · NỨT KÍNH 3 GIÂY");
+      } else if (!s.gunArmed && ratio < 1.06) { s.gunStartScale = st.scale; s.gunStartAt = m.tc; s.gunArmed = true; }
+      else if (elapsed > 500 && s.gunArmed) { s.gunStartScale = st.scale; s.gunStartAt = m.tc; }
+    } else { s.gunStartScale = st.scale; s.gunStartAt = m.tc; s.gunArmed = true; }
     s.gunPose = gunPose;
-    // Edge-triggered pose actions: one effect per confirmed gesture, with cooldown.
-    if (ok && m.tc > s.actionCooldown && s.label !== s.lastActionLabel) {
-      if (s.label === "Chữ V") { effects.play("rainbow", 1800, { cooldown: 1800 }); effects.play("confetti", 1200, { cooldown: 1800 }); s.actionCooldown = m.tc + 1800; setText("actionHint", "CHỮ V · CẦU VỒNG + CONFETTI"); }
-      else if (s.label === "Mở bàn tay") { effects.play("burst", 650, { cooldown: 1000 }); s.actionCooldown = m.tc + 1000; setText("actionHint", "MỞ TAY · NĂNG LƯỢNG"); }
-      else if (s.label === "Like") { effects.play("hearts", 1400, { cooldown: 1400 }); s.actionCooldown = m.tc + 1400; setText("actionHint", "LIKE · TRÁI TIM"); }
-      else if (s.label === "Nắm đấm") { effects.play("shockwave", 1000, { cooldown: 1000 }); s.actionCooldown = m.tc + 1000; setText("actionHint", "NẮM ĐẤM · SÓNG XUNG KÍCH"); }
-      else if (s.label === "Súng") setText("actionHint", "SÚNG · ĐẨY TAY VỀ CAMERA ĐỂ BẮN");
-      else if (s.label === "Chỉ tay") setText("actionHint", "CHỈ TAY · GIỮ ĐỂ TƯƠNG TÁC");
+
+    // Pose actions are edge-triggered: cooldown drops a new event rather than firing it late.
+    if (ok && s.label !== s.lastActionLabel) {
+      if (m.tc > s.actionCooldown) {
+        if (s.label === "Chữ V") { effects.play("rainbow", 1800, { cooldown: 1800 }); effects.play("confetti", 1200, { cooldown: 1800 }); s.actionCooldown = m.tc + 1800; setText("actionHint", "CHỮ V · CẦU VỒNG + CONFETTI"); }
+        else if (s.label === "Mở bàn tay") { effects.play("burst", 650, { cooldown: 1000 }); s.actionCooldown = m.tc + 1000; setText("actionHint", "MỞ TAY · VÒNG NĂNG LƯỢNG"); }
+        else if (s.label === "Like") { effects.play("hearts", 1400, { cooldown: 1400 }); s.actionCooldown = m.tc + 1400; setText("actionHint", "LIKE · TRÁI TIM"); }
+        else if (s.label === "Nắm đấm") { effects.play("shockwave", 1000, { cooldown: 1000 }); s.actionCooldown = m.tc + 1000; setText("actionHint", "NẮM ĐẤM · SÓNG XUNG KÍCH"); }
+        else if (s.label === "OK") { effects.play("ok", 750, { cooldown: 850 }); s.actionCooldown = m.tc + 850; setText("actionHint", "OK · VÒNG MỤC TIÊU"); }
+      }
+      if (s.label === "Súng") setText("actionHint", "SÚNG ĐÃ SẴN SÀNG · ĐẨY TAY VỀ CAMERA ĐỂ BẮN");
+      else if (s.label === "Chỉ tay") setText("actionHint", "CHỈ TAY · GIỮ ĐẦU NGÓN TRÊN NÚT ĐỂ BẤM");
+      else if (s.label === "Pinch") setText("actionHint", "CHỤM ĐẦU NGÓN CÁI + TRỎ · BẤM NHANH");
+      else if (s.label === "Chưa rõ") setText("actionHint", "CHƯA RÕ · ĐƯA TRỌN BÀN TAY VÀO KHUNG HÌNH");
       s.lastActionLabel = s.label;
     }
     let px = 0, py = 0; for (const a of [0, 5, 9, 13, 17]) { px += st.x[a * 2]; py += st.x[a * 2 + 1]; }
-    const sw = s.sw.push(m.tc, px / 5, py / 5, Math.max(st.scale, 0.03)); if (sw) {
+    const sw = s.sw.push(m.tc, px / 5, py / 5, Math.max(st.scale, 0.03)); if (sw && ok && s.g.actionable) {
       s.swipe = rend.mirrored ? ({ L: "R", R: "L" }[sw] || sw) : sw; s.swipeT = performance.now();
       if (m.tc > s.actionCooldown) { effects.play("slash", 750, { cooldown: 750 }); s.actionCooldown = m.tc + 750; setText("actionHint", `VUỐT ${s.swipe} · CHÉM ÁNH SÁNG`); }
     }
@@ -373,7 +383,7 @@ function hud(now, hands) {
   T.camFps = cnt.cam / dtc; T.aiFps = cnt.ai / dtc; T.dispFps = cnt.disp / dtc; cnt.cam = cnt.ai = cnt.disp = 0;
   const f = (v) => v.toFixed(1).padStart(5), vs = 500 / Math.max(30, T.dispFps);                 // nửa chu kỳ màn hình (ƯỚC LƯỢNG)
   const total = T.cam + T.age + T.render + vs;
-  setText("fps", Math.round(T.dispFps)); setText("lat", T.infer.toFixed(1) + "ms"); setText("hands", hands);
+  setText("fps", Math.round(T.dispFps)); setText("lat", T.infer.toFixed(1) + "ms"); setText("poseLatency", T.pose.toFixed(3) + "ms"); setText("hands", hands);
   setText("gest", slots.filter((s) => s.set.alpha > .5).map((s) => s.label + (now - s.swipeT < 700 ? " ↯" + ({ L: "←", R: "→", U: "↑", D: "↓" }[s.swipe] || "") : "")).join(" · ") || "—");
   setText("lead", "~" + Math.round(T.age) + "ms");
   $("tele").textContent =
@@ -384,6 +394,7 @@ XFER→W   ${f(M.xout.stats().p50)}  ${fmtP(M.xout)}  [đo] main→worker
 AI       ${f(T.infer)}  ${fmtP(M.ai)}  [đo] hand ${T.th.toFixed(1)}
 W→MAIN   ${f(M.back.stats().p50)}  ${fmtP(M.back)}  [đo] pack+trả về
 POST     ${f(T.filter)}  ${fmtP(M.gest)}  [đo] assign+filter+gesture
+POSE     ${f(T.pose)}  ${fmtP(M.pose)}  [đo] hình học + ổn định nhãn (không gồm AI)
 RENDER   ${f(T.render)}  ${fmtP(M.render)}  [đo] CPU encode lệnh vẽ
 AGE      ${f(T.age)}  ${fmtP(M.age)}  [đo] từ lúc trình chiếu khung → vẽ
 EST TOTAL${f(total)}  [ước lượng] cam+age+render+½vsync (CHƯA phải motion-to-photon)
@@ -510,6 +521,9 @@ async function requestStart() {
 $("startBtn").onclick = $("startMain").onclick = requestStart;
 $("labBtn").onclick = () => { panelOpen = !panelOpen; $("aiPanel").classList.toggle("hidden", !panelOpen); if (panelOpen) renderAgentCards(); }; $("closeLabBtn").onclick = () => { panelOpen = false; $("aiPanel").classList.add("hidden"); };
 $("modelSwitchBtn").onclick = toggleModel; $("abBtn").onclick = () => abBench.active ? stopABBenchmark() : startABBenchmark();
+const gestureGuide = $("gestureGuide");
+const toggleGestureGuide = (open) => { const visible = typeof open === "boolean" ? open : gestureGuide.classList.contains("hidden"); gestureGuide.classList.toggle("hidden", !visible); gestureGuide.setAttribute("aria-hidden", String(!visible)); $("gestureGuideBtn").setAttribute("aria-expanded", String(visible)); };
+$("gestureGuideBtn").onclick = () => toggleGestureGuide(); $("closeGestureGuideBtn").onclick = () => toggleGestureGuide(false);
 $("stopBtn").onclick = stopCamera; $("snapBtn").onclick = snapshot; $("profBtn").onclick = cycleProfile; $("styleBtn").onclick = cycleStyle;
 $("handBtn").onclick = () => toggle("hands", $("handBtn"));
 const toggleIx = () => { ix.on = !ix.on; $("uiBtn").classList.toggle("off", !ix.on); };
@@ -568,7 +582,7 @@ function closeWonder() {
 }
 wonderBtn.addEventListener("click", openWonder);
 $("closeWonderBtn").addEventListener("click", closeWonder);
-addEventListener("keydown", (e) => { if (e.key === "Escape" && wonderOpen) closeWonder(); else if (e.key === "Escape" && meeting.opened) void meeting.close(); });
+addEventListener("keydown", (e) => { if (e.key === "Escape" && wonderOpen) closeWonder(); else if (e.key === "Escape" && meeting.opened) void meeting.close(); else if (e.key === "Escape") toggleGestureGuide(false); });
 addEventListener("keydown", (e) => {
   const k = e.key.toLowerCase();
   if (k === "f") full(); else if (k === "c") $("switchBtn").click(); else if (k === "s") snapshot(); else if (k === "v") cycleStyle(); else if (k === "i") toggleIx();

@@ -19,7 +19,7 @@ onmessage = async (e) => {
       cfg = m; importScripts(`${m.root}/vision_bundle.cjs`);
       M = Object.assign({}, self.exports, self.module.exports);
       vision = await M.FilesetResolver.forVisionTasks(`${m.root}/wasm`);
-      let delegate; [hands, delegate] = await mk(M.HandLandmarker, m.handUrl, { numHands: 2, minHandDetectionConfidence: .4, minHandPresenceConfidence: .4, minTrackingConfidence: .4 });
+      let delegate; [hands, delegate] = await mk(M.HandLandmarker, m.handUrl, { numHands: 2, minHandDetectionConfidence: .5, minHandPresenceConfidence: .5, minTrackingConfidence: .5 });
       if (m.face) await makeFace();
       postMessage({ type: "ready", delegate, conn: { handConn: M.HandLandmarker.HAND_CONNECTIONS, faceConn: M.FaceLandmarker.FACE_LANDMARKS_CONTOURS, faceMesh: M.FaceLandmarker.FACE_LANDMARKS_TESSELATION, faceOval: M.FaceLandmarker.FACE_LANDMARKS_FACE_OVAL } });
     } catch (err) { postMessage({ type: "error", message: String(err.message || err) }); }
