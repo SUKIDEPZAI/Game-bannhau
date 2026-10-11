@@ -1,4 +1,4 @@
-// Skeleton v20.0: local inference, validated WonderSnap runtime, WebRTC meeting signaling, and aggregate telemetry.
+// Skeleton v20.1: angle-based gesture recognition, action guide, low-latency diagnostics, WebRTC meeting signaling, and aggregate telemetry.
 import express from "express";
 import compression from "compression";
 import fs from "node:fs";
@@ -10,7 +10,7 @@ import { MeetingHub } from "./lib/meeting-hub.js";
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
-const VERSION = "20.0.0";
+const VERSION = "20.1.0";
 const app = express();
 app.disable("x-powered-by");
 app.set("trust proxy", 1);

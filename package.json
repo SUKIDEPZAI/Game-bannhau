@@ -1,6 +1,6 @@
 {
   "name": "ai-hand-skeleton",
-  "version": "20.0.0",
+  "version": "20.1.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -10,6 +10,7 @@
     "start": "node server.js",
     "test": "node --test test/*.test.js test/run-all.js",
     "bench": "node test/bench.js",
+    "bench:gesture": "node test/gesture-bench.js",
     "e2e": "node test/e2e-matrix.js",
     "sweep": "node test/sweep.js",
     "preview": "node test/render-preview.mjs && python3 test/preview.py",
@@ -21,5 +22,5 @@
     "express": "^4.19.2",
     "pg": "^8.13.1"
   },
-  "description": "Low-latency hand tracking, expressive gesture effects, two-person WebRTC meetings, and Render/PostgreSQL operations"
+  "description": "Low-latency hand tracking, geometry-based gesture actions, two-person WebRTC meetings, and Render/PostgreSQL operations"
 }

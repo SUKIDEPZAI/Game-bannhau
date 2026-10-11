@@ -1,4 +1,4 @@
-# Skeleton v18 — Low-Latency Performance Lab
+# Skeleton v20.1 — Gesture Clarity & Low-Latency Lab
 
 Focus: realtime hand tracking on Android, frame freshness, smooth rendering, model A/B benchmarks, and non-blocking Render/PostgreSQL maintenance tasks.
 
@@ -11,6 +11,16 @@ Focus: realtime hand tracking on Android, frame freshness, smooth rendering, mod
 - **Backend safety:** PostgreSQL stores aggregate metrics and queued jobs only; no frames, camera images or landmarks are sent to the server. Uploading summary metrics is **off by default**; it requires the user to check a consent box and then sends a summary at most once per 60 seconds while tracking. `/api/status`, `/healthz`, `/version.json`; HTML uses `no-store` to reduce stale-deployment confusion.
 - **Dedicated Render job worker:** jobs run in `jobs-worker.js`, not the web request process. `FOR UPDATE SKIP LOCKED`, bounded kinds/payloads, retries, and stale-running recovery.
 - **API controls:** metrics ingestion rate limit, bounded JSON body and metric validation, admin-token guard for job management, security response headers.
+
+
+## What's new in v20.1 — gesture recognition and actions
+
+- Finger poses combine PIP joint angles and fingertip-to-MCP length normalized to palm width, with hysteresis to avoid flickering labels as the hand rotates.
+- Thumb-angle/span logic distinguishes `Súng`, `Chỉ tay`, `Like`, `Mở bàn tay`, `OK` and `Pinch` more intentionally. Ambiguous poses are labelled `Chưa rõ` and cannot trigger an action.
+- An in-app **HƯỚNG DẪN CỬ CHỈ** panel shows how to pose and move the hand for each effect. Gun requires a confirmed gun pose followed by a fast 18% palm-scale increase; the cracked-glass overlay persists for 3 seconds. Pull back slightly to re-arm.
+- Model detection/presence/tracking thresholds are aligned to MediaPipe's standard 0.5 defaults in both main-thread and worker model initialization.
+- The live HUD shows `POSE` average JavaScript geometry-classification time; press `T` to open diagnostics with `POSE` P50/P95/P99 separately from `AI` inference and `POST` pipeline time. Run `npm run bench:gesture` for a quick Node microbenchmark. These do not substitute for live Android browser measurements.
+- `OK` is now semantically distinct from pinch-click: touch thumb/index tips and extend the other three fingers for the target-ring effect; pinch over a UI button remains an immediate one-shot click.
 
 ## Local run
 

@@ -1,4 +1,4 @@
-# Skeleton v20.0 Blueprint; the WonderSnap upstream camera/render defaults are preserved. The web service keeps camera inference client-side.
+# Skeleton v20.1 Blueprint; the WonderSnap upstream camera/render defaults are preserved. The web service keeps camera inference client-side.
 # Render Background Worker is separate so maintenance jobs never block camera/API traffic.
 services:
   - type: web
