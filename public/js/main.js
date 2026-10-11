@@ -7,7 +7,6 @@ import { Interact } from "./interact.js";
 import { Metric, fmtP, Recorder } from "./telemetry.js";
 import { PerfController } from "./perf.js";
 import { pickAssignment } from "./tracking.js";
-import { wonderQualityTier } from "./wondersnap-quality.js";
 import { AIAgentSuite } from "./ai-agents.js";
 import { AgentOrchestrator, ABBenchmark, InterruptibleWait } from "./agent-orchestrator.js";
 
@@ -488,18 +487,11 @@ function openWonder() {
   wonderFrame.src = wonderEntryUrl();
 }
 
-// Conservative pre-run quality tier: preserves every model while reducing GPU work on
-// mobile/unknown hardware. This is a startup heuristic, not a measured performance claim.
+// Keep WonderSnap's upstream defaults (particle count, DPR, trails and camera request)
+// so the embedded mode follows the same code path as /wondersnap/ opened directly.
+// Only autostart is added so opening WONDER immediately begins the same camera flow.
 function wonderEntryUrl() {
-  const quality = wonderQualityTier({
-    coarse: window.matchMedia?.("(pointer: coarse)")?.matches,
-    maxTouchPoints: navigator.maxTouchPoints,
-    width: innerWidth,
-    hardwareConcurrency: navigator.hardwareConcurrency,
-    deviceMemory: navigator.deviceMemory,
-    devicePixelRatio: window.devicePixelRatio,
-  });
-  const query = new URLSearchParams({ n: String(quality.particles), dpr: String(quality.dpr), trails: String(quality.trails), autostart: "camera" });
+  const query = new URLSearchParams({ autostart: "camera" });
   return `/wondersnap/?${query.toString()}`;
 }
 
