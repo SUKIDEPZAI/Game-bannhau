@@ -5,7 +5,7 @@ let bad = 0;
 for (const [n, o] of Object.entries(cases)) {
   const p = spawnSync("node", ["-e", `import("./test/e2e.js").then(async m=>{const r=await m.e2e(${JSON.stringify({ ...o, secs: 3 })});r.tele=undefined;console.log("@@"+JSON.stringify(r));process.exit(0)})`], { encoding: "utf8", timeout: 25000 });
   const line = p.stdout.split("\n").find((l) => l.startsWith("@@")); const r = line ? JSON.parse(line.slice(2)) : { arcs: 0, errors: [p.stderr.slice(0, 200)], fps: "?", hands: "?", model: "?", workers: "?", errBanner: "" };
-  const want = Math.min(55, 1000 / (o.aiMs || 8) * 0.6, (o.camFps || 60) * 0.8); const ok = o.expectCameraFailure ? (!r.running && !r.errors.length && r.errBanner.includes("Không mở được camera.")) : (r.dtOk && r.arcs > 500 && !r.errors.length && String(r.hands) === "1" && r.aiFps >= want && r.level === "0"); if (!ok) bad++;
+  const want = Math.min(55, 1000 / (o.aiMs || 8) * 0.6, (o.camFps || 60) * 0.8); const ok = o.expectCameraFailure ? (!r.running && !r.errors.length && r.errBanner.includes("Không mở được camera.")) : (r.dtOk && r.draws > 500 && !r.errors.length && String(r.hands) === "1" && r.aiFps >= want && r.level === "0"); if (!ok) bad++;
   if (o.still && !r.hover) bad++, console.log("FAIL hover không bật");
   console.log(`${ok ? "OK  " : "FAIL"} ${n.padEnd(46)} dtOk=${r.dtOk} arcs=${String(r.arcs).padStart(5)} fps=${r.fps} tay=${r.hands} model=${r.model} aiFps=${r.aiFps} lv=${r.level} workers=${r.workers} lỗi=${r.errors.join("|") || "-"}`);
 }

@@ -24,7 +24,7 @@ export async function e2e({ still = false, aiMs = 8, pingOk = false, workerFailF
   await import("../public/js/main.js?" + Math.random());
   await E("startBtn").onclick(); await new Promise((r) => setTimeout(r, 80));
   if (restartFail) { await E("switchBtn").onclick(); await new Promise((r) => setTimeout(r, 80)); }
-  if (still) { const tip = hand(0.5, 0.6)[8], b = el("btnA"); b.rect = { left: 960 - tip.x * 960 - 25, top: tip.y * 540 - 25, right: 960 - tip.x * 960 + 25, bottom: tip.y * 540 + 25, width: 50, height: 50 }; g.__btns = [b]; g.__btnA = b; }
+  if (still) { const tip = hand(0.5, 0.6)[8], b = el("btnA"); b.rect = { left: 960 - tip.x * 960 - 25, top: tip.y * 540 - 25, right: 960 - tip.x * 960 + 25, bottom: tip.y * 540 + 25, width: 50, height: 50 }; g.__btns = [b]; g.__btnA = b; if (g.__skel?.ix) g.__skel.ix.scanT = -1e9; }
   let pf = 0, stop = false; (function tick() { if (stop) return; pf++; video.currentTime += 1 / camFps; if (cb) { const f = cb; cb = null; f(performance.now(), noPresented ? { expectedDisplayTime: performance.now() + 16 } : { presentedFrames: pf, expectedDisplayTime: performance.now() + 16, captureTime: performance.now() - 30 }); } setTimeout(tick, 1000 / camFps); })();
   await new Promise((r) => setTimeout(r, secs * 1000)); stop = true;
   const sk = g.__skel, set = sk.slots[0].set; const dtOk = set.last > performance.now() - 2000 && sk.fm.cap > performance.now() - 2000;   // lỗi cũ: fm.cap=0 → last≈vài ms
