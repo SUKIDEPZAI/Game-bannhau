@@ -9,17 +9,35 @@ import { PerfController } from "./perf.js";
 import { pickAssignment } from "./tracking.js";
 import { AIAgentSuite } from "./ai-agents.js";
 import { AgentOrchestrator, ABBenchmark, InterruptibleWait } from "./agent-orchestrator.js";
+import { EffectLayer } from "./effects.js";
+import { MeetingClient } from "./meeting.js";
 
 const $ = (id) => document.getElementById(id), setText = (id, t) => { const e = $(id); if (e) e.textContent = t; };
 const video = $("video"), canvas = $("overlay"), stage = $("stage"), rend = new Renderer(canvas);
 const common = { maxH: FILTER.maxHorizon, gapMs: FILTER.gapMs, reacqMs: FILTER.reacqRampMs, soft: FILTER.outlierSoft, hard: FILTER.outlierHard };
-const slots = [0, 1].map(() => ({ set: new SmoothSet(21, { ...FILTER.hand, ...common }), label: "", g: new GestureTracker(), sw: new SwipeDetector(), swipe: "", swipeT: -1e9 }));
+const slots = [0, 1].map(() => ({ set: new SmoothSet(21, { ...FILTER.hand, ...common }), label: "", g: new GestureTracker(), sw: new SwipeDetector(), swipe: "", swipeT: -1e9, gunPose: false, gunStartScale: 0, gunStartAt: 0, actionCooldown: 0, lastActionLabel: "" }));
 const M = Object.fromEntries(["ai", "age", "render", "xfer", "cap", "xout", "wq", "back", "gest"].map((k) => [k, new Metric()]));
 const rec = new Recorder(), perf = new PerfController(PERF), agents = new AIAgentSuite(), domainAgents = new AgentOrchestrator(), abBench = new ABBenchmark(), abWait = new InterruptibleWait(); let perfT = 0, lastSubmitPf = -1, fm = { now: 0, cap: 0, pf: 0, n: 0 };
 let ai = null, activeModel = "mediapipe", modelPromise = null, startPromise = null, aiRecovery = false, abPromise = null, backendStatus = "UNKNOWN", databaseStatus = "unknown", jobsStatus = "ok", panelOpen = false, lastAgentUi = 0, pname = DEFAULT_PROFILE, P = PROFILES[pname], stream = null, running = false, facing = "user", lastRaf = 0, camLag = 25;
 let cameraGeneration = 0, cameraNeedsRetry = false, rafId = 0, frameCbId = null, frameCbKind = "", fallbackFrameNo = 0, lastFallbackVideoTime = -1, lastMetricsPostAt = 0, metricsPostBusy = false;
 const show = { hands: true };
 const ix = new Interact(canvas, INTERACT, () => document.querySelectorAll(INTERACT.selector));
+const effects = new EffectLayer($("gestureEffects"));
+let resumeAfterMeeting = false;
+const meeting = new MeetingClient({
+  onPauseApp: () => {
+    resumeAfterMeeting = running || cameraNeedsRetry || !!startPromise || wonderOpen;
+    if (typeof wonderOpen !== "undefined" && wonderOpen) {
+      wonderOpen = false;
+      $("wonderOverlay").classList.add("hidden"); $("wonderOverlay").setAttribute("aria-hidden", "true");
+      $("wonderBtn").setAttribute("aria-expanded", "false");
+      $("wonderFrame").onload = null; $("wonderFrame").src = "about:blank";
+    }
+    // Always invalidate a pending getUserMedia/startup request before WebRTC opens its own camera.
+    stopCamera();
+  },
+  onResumeApp: () => { const resume = resumeAfterMeeting; resumeAfterMeeting = false; if (resume) void requestStart(); }
+});
 globalThis.__skel = { slots, fm, ix, agents: domainAgents, abBench };
 Object.defineProperty(globalThis.__skel, "running", { get: () => running }); // phục vụ test/E2E & gỡ lỗi trong Console
 const T = { stale: 0, cam: 0, infer: 0, th: 0, rtt: 0, filter: 0, render: 0, age: 0, camFps: 0, aiFps: 0, dispFps: 0, dropped: 0, res: "—" };
@@ -131,7 +149,7 @@ function cancelPumps() {
 }
 function resetTracking() {
   for (const s of slots) {
-    s.set.reset(); s.g.reset(); s.sw.reset(); s.label = ""; s.swipe = ""; s.swipeT = -1e9;
+    s.set.reset(); s.g.reset(); s.sw.reset(); s.label = ""; s.swipe = ""; s.swipeT = -1e9; s.gunPose = false; s.gunStartScale = 0; s.gunStartAt = 0; s.lastActionLabel = "";
   }
   ix.clearVisuals?.(slots);
 }
@@ -274,8 +292,31 @@ function assign(m) {
     s.set.pushPacked(H, o, m.tc, m.ts);
     const st = s.set, sp = Math.hypot(st.pv[0], st.pv[1]) / Math.max(st.scale, 0.03), ok = st.pe < 0.3 && st.reacq < 0.5;
     s.label = s.g.update(st, aspect, m.tc, sp, ok);
+    // Gun pose = index extended + thumb extended + middle/ring/pinky folded.
+    // A shot is inferred only when the hand rapidly grows in frame while the pose is held.
+    const e = s.g.ext, gunPose = !!s.g.thumb && e[0] === 1 && e[1] === 0 && e[2] === 0 && e[3] === 0;
+    if (ok && gunPose) {
+      if (!s.gunPose || m.tc - s.gunStartAt > 420) { s.gunStartScale = st.scale; s.gunStartAt = m.tc; }
+      else if (m.tc - s.gunStartAt >= 65 && m.tc - s.gunStartAt <= 420 && st.scale > s.gunStartScale * 1.28 && m.tc > s.actionCooldown) {
+        effects.play("shatter", 3000, { cooldown: 1200 }); s.actionCooldown = m.tc + 1200; s.gunStartAt = m.tc; s.gunStartScale = st.scale; setText("actionHint", "BẮN! · NỨT KÍNH 3 GIÂY");
+      }
+    } else { s.gunStartScale = st.scale; s.gunStartAt = m.tc; }
+    s.gunPose = gunPose;
+    // Edge-triggered pose actions: one effect per confirmed gesture, with cooldown.
+    if (ok && m.tc > s.actionCooldown && s.label !== s.lastActionLabel) {
+      if (s.label === "Chữ V") { effects.play("rainbow", 1800, { cooldown: 1800 }); effects.play("confetti", 1200, { cooldown: 1800 }); s.actionCooldown = m.tc + 1800; setText("actionHint", "CHỮ V · CẦU VỒNG + CONFETTI"); }
+      else if (s.label === "Mở bàn tay") { effects.play("burst", 650, { cooldown: 1000 }); s.actionCooldown = m.tc + 1000; setText("actionHint", "MỞ TAY · NĂNG LƯỢNG"); }
+      else if (s.label === "Like") { effects.play("hearts", 1400, { cooldown: 1400 }); s.actionCooldown = m.tc + 1400; setText("actionHint", "LIKE · TRÁI TIM"); }
+      else if (s.label === "Nắm đấm") { effects.play("shockwave", 1000, { cooldown: 1000 }); s.actionCooldown = m.tc + 1000; setText("actionHint", "NẮM ĐẤM · SÓNG XUNG KÍCH"); }
+      else if (s.label === "Súng") setText("actionHint", "SÚNG · ĐẨY TAY VỀ CAMERA ĐỂ BẮN");
+      else if (s.label === "Chỉ tay") setText("actionHint", "CHỈ TAY · GIỮ ĐỂ TƯƠNG TÁC");
+      s.lastActionLabel = s.label;
+    }
     let px = 0, py = 0; for (const a of [0, 5, 9, 13, 17]) { px += st.x[a * 2]; py += st.x[a * 2 + 1]; }
-    const sw = s.sw.push(m.tc, px / 5, py / 5, Math.max(st.scale, 0.03)); if (sw) { s.swipe = rend.mirrored ? ({ L: "R", R: "L" }[sw] || sw) : sw; s.swipeT = performance.now(); }
+    const sw = s.sw.push(m.tc, px / 5, py / 5, Math.max(st.scale, 0.03)); if (sw) {
+      s.swipe = rend.mirrored ? ({ L: "R", R: "L" }[sw] || sw) : sw; s.swipeT = performance.now();
+      if (m.tc > s.actionCooldown) { effects.play("slash", 750, { cooldown: 750 }); s.actionCooldown = m.tc + 750; setText("actionHint", `VUỐT ${s.swipe} · CHÉM ÁNH SÁNG`); }
+    }
   });
   slots.forEach((s, i) => { if (!used.has(i)) s.set.miss++; });
 }
@@ -457,8 +498,13 @@ async function toggleModel() {
   if (!ok && next === "micro") setText("modelState", ai ? `${activeModel.toUpperCase()}/${ai.delegate || ai.kind}` : "OFF");
 }
 async function requestStart() {
+  if (meeting.opened) return; // the meeting owns camera/microphone while its overlay is active
   if (startPromise) return startPromise;
-  startPromise = (async () => { await setProfile(pname); if (await ensureModel()) await startCamera(); })();
+  startPromise = (async () => {
+    await setProfile(pname);
+    if (meeting.opened) return;
+    if (await ensureModel() && !meeting.opened) await startCamera();
+  })();
   try { return await startPromise; } finally { startPromise = null; }
 }
 $("startBtn").onclick = $("startMain").onclick = requestStart;
@@ -522,7 +568,7 @@ function closeWonder() {
 }
 wonderBtn.addEventListener("click", openWonder);
 $("closeWonderBtn").addEventListener("click", closeWonder);
-addEventListener("keydown", (e) => { if (e.key === "Escape" && wonderOpen) closeWonder(); });
+addEventListener("keydown", (e) => { if (e.key === "Escape" && wonderOpen) closeWonder(); else if (e.key === "Escape" && meeting.opened) void meeting.close(); });
 addEventListener("keydown", (e) => {
   const k = e.key.toLowerCase();
   if (k === "f") full(); else if (k === "c") $("switchBtn").click(); else if (k === "s") snapshot(); else if (k === "v") cycleStyle(); else if (k === "i") toggleIx();
@@ -530,8 +576,11 @@ addEventListener("keydown", (e) => {
 });
 
 
+const inviteRoom = new URLSearchParams(location.search).get("meet");
+if (inviteRoom) meeting.open({ roomId: inviteRoom });
+
 // v19: request camera permission on entry. Browsers may defer/deny the prompt; the
 // existing start buttons remain available for retry and no permission is bypassed.
 if (document.visibilityState === "visible") {
-  queueMicrotask(() => { if (!wonderOpen && !running) void requestStart(); });
+  queueMicrotask(() => { if (!wonderOpen && !meeting.opened && !running) void requestStart(); });
 }

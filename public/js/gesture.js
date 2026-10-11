@@ -21,7 +21,7 @@ export class GestureTracker {
     if (this.pinch && (e[1] || e[2])) l = "Pinch";
     else if (n === 4) l = th ? "Mở bàn tay" : "4 ngón";
     else if (n === 0) l = th ? "Like" : "Nắm đấm";
-    else if (n === 1 && e[0]) l = "Chỉ tay";
+    else if (n === 1 && e[0]) l = th ? "Súng" : "Chỉ tay";
     else if (n === 2 && e[0] && e[1]) l = "Chữ V";
     else if (n === 3 && !e[0]) l = "OK";
     else l = `${n + (th ? 1 : 0)} ngón`;
