@@ -1,5 +1,6 @@
-// Vendor the upstream MIT-licensed WonderSnap app during deploy. Validate every
-// procedural model and install its declared MediaPipe version in an isolated path.
+// Vendor upstream WonderSnap with its default latency/render/camera path intact. Only
+// remove decorative fingertip circles and add coarse in-frame diagnostics; validate every
+// procedural model and install its declared MediaPipe runtime in an isolated path.
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -30,16 +31,28 @@ try {
   let appSource = fs.readFileSync(appFile, 'utf8');
   const fpsAnchor = "if (t - this._fpsT >= 1) { this.fps = this._fpsN / (t - this._fpsT); this._fpsN = 0; this._fpsT = t; }";
   const handFile = path.join(repo, 'src', 'hands.js');
-  let handSource = fs.readFileSync(handFile, 'utf8');
+  const handSource = fs.readFileSync(handFile, 'utf8');
   const cameraAnchor = "video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user', frameRate: { ideal: 30 } }";
-  if (!handSource.includes(cameraAnchor)) throw new Error('WonderSnap camera config changed upstream; refusing an unverified low-latency patch');
-  handSource = handSource.replace(cameraAnchor, "video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user', frameRate: { ideal: 30, max: 30 } }");
+  // Validate but do not rewrite the upstream camera request. Past hand-tuned overrides
+  // were not backed by an on-device latency comparison and caused Skeleton to diverge
+  // from the known-fast direct WonderSnap route.
+  if (!handSource.includes(cameraAnchor)) throw new Error('WonderSnap upstream camera path changed; review latency parity before updating');
+
+  // Remove only the decorative landmark dots and fingertip cursor rings. Gesture logic,
+  // pointer coordinates, dwell timers, hit-testing and pinch actions remain untouched.
+  const dotsAnchor = "    g.fillStyle = '#fff'; g.globalAlpha = 0.9;\n    for (const p of P) { g.beginPath(); g.arc(p[0], p[1], 2.6 * dpr, 0, Math.PI * 2); g.fill(); }\n    return P;";
+  const dotsReplacement = "    return P;";
+  if (!appSource.includes(dotsAnchor)) throw new Error('WonderSnap landmark-dot drawing changed upstream; refusing an unverified visual patch');
+  appSource = appSource.replace(dotsAnchor, dotsReplacement);
+  const pointerAnchor = "      g.strokeStyle = '#7dff9b'; g.lineWidth = 2 * dpr; g.globalAlpha = 0.9;\n      g.beginPath(); g.arc(x, y, 14 * dpr, 0, Math.PI * 2); g.stroke();\n      if (li >= 0) {\n        g.lineWidth = 4 * dpr; g.beginPath(); g.arc(x, y, 20 * dpr, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * prog); g.stroke();";
+  const pointerReplacement = "      // Visual fingertip rings are disabled; pointer/dwell interaction stays active.\n      if (li >= 0) {";
+  if (!appSource.includes(pointerAnchor)) throw new Error('WonderSnap fingertip cursor drawing changed upstream; refusing an unverified visual patch');
+  appSource = appSource.replace(pointerAnchor, pointerReplacement);
   const fpsPatch = `if (t - this._fpsT >= 1) { this.fps = this._fpsN / (t - this._fpsT); this._fpsN = 0; this._fpsT = t; if (window.parent !== window) window.parent.postMessage({ type: 'skeleton:wondersnap:metrics', fps: this.fps, aiMs: this.cam?.frames ? this.cam.detectMs : null, particles: CFG.n, model: CATALOG[this.ctl.state.index]?.name || 'unknown' }, location.origin); }`;
   if (!appSource.includes(fpsAnchor)) throw new Error('WonderSnap FPS instrumentation anchor changed upstream; refusing an unverified patch');
   appSource = appSource.replace(fpsAnchor, fpsPatch);
   fs.writeFileSync(appFile, appSource);
-  // Keep the upstream camera workload bounded for more responsive tracking on mobile devices.
-  fs.writeFileSync(handFile, handSource);
+  // src/hands.js is copied unchanged to preserve upstream camera constraints and tracking.
 
   const next = `${target}.next`;
   fs.rmSync(next, { recursive: true, force: true });
@@ -53,7 +66,7 @@ try {
   console.log('[vendor] installing isolated WonderSnap runtime dependencies');
   execFileSync('npm', ['install', '--prefix', next, '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund'], { stdio: 'inherit', timeout: 240000 });
 
-  fs.writeFileSync(path.join(next, 'UPSTREAM.md'), `# WonderSnap upstream\n\nVendored during the build from ${upstream}\n\nThe upstream project is licensed under MIT; see LICENSE. The build applies a conservative 640×480@30 camera capture preset for lower inference workload and validates every catalog model with a deterministic 512-particle smoke build and installs dependencies in an isolated wondersnap/node_modules directory. The embedded parent message carries only coarse FPS/inference timing and the current model label; no frames or landmarks are transmitted.\n`);
+  fs.writeFileSync(path.join(next, 'UPSTREAM.md'), `# WonderSnap upstream\n\nVendored during the build from ${upstream}\n\nThe upstream project is licensed under MIT; see LICENSE. Upstream src/hands.js camera constraints and the particle/DPR/trail defaults are kept unchanged to match the direct WonderSnap route. The build removes decorative landmark/fingertip circles without changing gesture hit-testing, validates every catalog model with a deterministic 512-particle smoke build, and installs dependencies in an isolated wondersnap/node_modules directory. The embedded parent message carries only coarse FPS/inference timing and the current model label; no frames or landmarks are transmitted.\n`);
   fs.rmSync(target, { recursive: true, force: true });
   fs.renameSync(next, target);
   console.log('[vendor] WonderSnap vendored and validated successfully');
