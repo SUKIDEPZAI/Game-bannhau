@@ -82,3 +82,59 @@ button.kb-press{background:rgba(0,245,160,.6)!important;transform:scale(.94)!imp
 #wonderFrame{display:block;flex:1;width:100%;height:100%;border:0;background:#05070a}
 .wonder-status{position:absolute;bottom:8px;left:12px;right:12px;margin:0;padding:6px 10px;color:#d8e9f6;background:#08111bcc;border-radius:8px;font-size:11px;pointer-events:none}
 @media(max-width:560px){.wonder-toolbar{gap:8px}.wonder-toolbar span{display:none}.wonder-toolbar button{margin-left:auto;font-size:11px}}
+
+/* v20.0: hand-action visual effects. Decorative only; never captures clicks or modifies page content. */
+#gestureEffects{position:fixed;inset:0;z-index:1500;pointer-events:none;overflow:hidden;contain:layout paint}
+.gesture-effect{position:absolute;inset:0;overflow:hidden;pointer-events:none}
+.effect-shatter{background:radial-gradient(circle at 50% 48%,rgba(255,255,255,.18),rgba(7,13,23,.06) 20%,rgba(0,0,0,.68) 100%);animation:shatter-life 3s ease-out both}
+.effect-shatter svg{position:absolute;inset:0;width:100%;height:100%;filter:drop-shadow(0 0 2px rgba(180,237,255,.9));}
+.effect-shatter path{fill:none;stroke:#d8f5ff;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke}
+.effect-shatter .crack-fine path{stroke:rgba(212,245,255,.65);stroke-width:1.2}
+.shatter-flash{position:absolute;inset:0;background:rgba(224,247,255,.22);animation:shatter-flash .38s ease-out both}
+.shatter-label{position:absolute;top:16%;left:0;right:0;text-align:center;color:#e4f8ff;letter-spacing:.28em;font-weight:900;font-size:clamp(12px,2.4vw,22px);text-shadow:0 0 18px #70cfff;animation:shatter-label 3s both}
+@keyframes shatter-life{0%{opacity:0}6%{opacity:1}75%{opacity:1}100%{opacity:0}}
+@keyframes shatter-flash{0%{opacity:.9}100%{opacity:0}}
+@keyframes shatter-label{0%,15%{opacity:0;transform:translateY(-10px)}25%,72%{opacity:1;transform:translateY(0)}100%{opacity:0}}
+.effect-burst{display:grid;place-items:center}
+.effect-burst:before{content:"";position:absolute;width:min(70vmin,620px);aspect-ratio:1;border:3px solid rgba(93,247,255,.92);border-radius:50%;box-shadow:0 0 50px rgba(67,235,255,.65),inset 0 0 45px rgba(67,235,255,.4);animation:energy-ring .9s cubic-bezier(.1,.7,.1,1) both}
+.effect-burst i{position:absolute;left:50%;top:50%;width:4px;height:36vmin;background:linear-gradient(transparent,rgba(112,255,246,.9),transparent);transform:rotate(calc(var(--i,0)*45deg));animation:energy-rays .7s ease-out both}
+.effect-burst i:nth-child(1){--i:0}.effect-burst i:nth-child(2){--i:1}.effect-burst i:nth-child(3){--i:2}.effect-burst i:nth-child(4){--i:3}.effect-burst i:nth-child(5){--i:4}.effect-burst i:nth-child(6){--i:5}.effect-burst i:nth-child(7){--i:6}.effect-burst i:nth-child(8){--i:7}
+@keyframes energy-ring{0%{opacity:0;transform:scale(.05)}40%{opacity:1}100%{opacity:0;transform:scale(1.25)}}
+@keyframes energy-rays{0%{opacity:0;transform:rotate(calc(var(--i,0)*45deg)) scaleY(.1)}35%{opacity:1}100%{opacity:0;transform:rotate(calc(var(--i,0)*45deg)) scaleY(1.4)}}
+.effect-confetti i{position:absolute;left:var(--x);top:38%;width:7px;height:15px;border-radius:2px;background:hsl(calc(var(--i)*15deg),95%,65%);animation:confetti-fall 1.4s cubic-bezier(.15,.7,.25,1) var(--d) both;transform:rotate(calc(var(--i)*22deg))}
+@keyframes confetti-fall{0%{opacity:0;transform:translateY(-12vh) rotate(0) scale(.4)}15%{opacity:1}100%{opacity:0;transform:translateY(75vh) rotate(680deg) scale(1)}}
+.effect-hearts{display:flex;justify-content:center;align-items:center;gap:9vw;color:#ff6caa;font-size:clamp(40px,10vw,100px);text-shadow:0 0 25px rgba(255,60,140,.8)}
+.effect-hearts>*{position:relative;animation:heart-rise 1.4s ease-out both}.effect-hearts i{font-style:normal;animation-delay:.1s}.effect-hearts b{font-weight:400;animation-delay:.22s}.effect-hearts em{font-style:normal;animation-delay:.32s}
+@keyframes heart-rise{0%{opacity:0;transform:translateY(45vh) scale(.3)}20%{opacity:1}100%{opacity:0;transform:translateY(-25vh) scale(1.1) rotate(18deg)}}
+.effect-shockwave{display:grid;place-items:center}
+.effect-shockwave>*{position:absolute;width:18vmin;height:18vmin;border:3px solid rgba(255,196,100,.95);border-radius:50%;box-shadow:0 0 30px rgba(255,132,48,.7);animation:shockwave .95s ease-out both}
+.effect-shockwave b{animation-delay:.12s}.effect-shockwave em{animation-delay:.24s}
+@keyframes shockwave{0%{opacity:1;transform:scale(.1)}100%{opacity:0;transform:scale(7)}}
+.effect-slash:before,.effect-slash i,.effect-slash b{content:"";position:absolute;left:-15%;top:50%;width:130%;height:3px;background:linear-gradient(90deg,transparent,rgba(178,255,255,.95),#fff,rgba(110,220,255,.75),transparent);box-shadow:0 0 20px rgba(109,234,255,.9);transform:rotate(-18deg);animation:slash-cut .75s ease-out both}
+.effect-slash i{top:48%;transform:rotate(-22deg);animation-delay:.04s}.effect-slash b{top:52%;transform:rotate(-14deg);animation-delay:.08s}
+@keyframes slash-cut{0%{opacity:0;transform:translateX(-30%) rotate(-18deg) scaleX(.1)}25%{opacity:1}100%{opacity:0;transform:translateX(30%) rotate(-18deg) scaleX(1.1)}}
+.action-toast{position:fixed;left:50%;top:18%;z-index:1499;transform:translateX(-50%);padding:8px 14px;border:1px solid rgba(122,232,255,.45);border-radius:999px;background:rgba(5,14,22,.8);color:#e5fbff;font-size:12px;font-weight:900;letter-spacing:.12em;pointer-events:none;opacity:0}
+
+/* v20.0: two-person video room, separated from hand tracking to prevent camera/GPU contention. */
+.meet-overlay{position:fixed;inset:0;z-index:1200;background:radial-gradient(ellipse at top right,#102137,#05070a 55%);overflow:auto;overscroll-behavior:contain;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+.meet-overlay.hidden{display:none!important}
+.meet-shell{width:min(100%,1100px);min-height:100%;margin:0 auto;padding:16px;display:flex;flex-direction:column;gap:12px}
+.meet-header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 15px;border:1px solid rgba(255,255,255,.12);border-radius:16px;background:rgba(7,15,25,.86)}
+.meet-header>div{display:flex;flex-direction:column;gap:4px;min-width:0}.meet-header strong{font-size:13px;letter-spacing:.12em}.meet-header small{font-size:11px;color:#9db3c8;overflow-wrap:anywhere}
+.meet-status{margin:0;padding:11px 13px;background:rgba(91,176,220,.1);border:1px solid rgba(91,176,220,.2);border-radius:12px;color:#d4efff;font-size:12px;line-height:1.5}.meet-status[data-kind="error"]{border-color:rgba(255,90,115,.42);color:#ffc6d1;background:rgba(120,16,34,.22)}.meet-status[data-kind="success"]{border-color:rgba(0,245,160,.3);color:#a8ffe0;background:rgba(0,130,94,.14)}.meet-status[data-kind="warn"]{border-color:rgba(255,203,103,.35);color:#ffe4a9}
+.meet-lobby{padding:clamp(16px,4vw,30px);border:1px solid rgba(255,255,255,.12);border-radius:18px;background:rgba(8,14,22,.84);display:flex;flex-direction:column;gap:12px}.meet-lobby h2{margin:0;font-size:clamp(20px,4vw,30px)}.meet-lobby p{margin:0;color:#9fb0c4;font-size:13px;line-height:1.65}.meet-join-row{display:flex;gap:8px}.meet-join-row input,.meet-invite-row input{min-width:0;flex:1;border:1px solid rgba(255,255,255,.15);border-radius:11px;background:#08111b;color:#f4f7fb;padding:11px 12px;font:inherit;font-size:12px;outline:none}.meet-join-row input:focus,.meet-invite-row input:focus{border-color:#7be6ff}
+.meet-note,.meet-privacy{font-size:10px!important;color:#8193a8!important;line-height:1.5!important}.meet-invite-row{display:flex;gap:8px;padding:9px;border-radius:13px;background:rgba(0,245,160,.06);border:1px solid rgba(0,245,160,.17)}
+.meet-video-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;min-height:0;flex:1}.meet-video-card{position:relative;min-height:240px;aspect-ratio:16/10;background:#030608;border:1px solid rgba(255,255,255,.14);border-radius:16px;overflow:hidden}.meet-video-card video{width:100%;height:100%;position:absolute;inset:0;object-fit:cover;background:#030608}.meet-video-card:first-child video{transform:scaleX(-1)}.meet-video-card span{position:absolute;left:10px;bottom:10px;padding:6px 8px;border-radius:7px;background:rgba(0,0,0,.62);font-size:9px;letter-spacing:.12em;color:#e4f2fc}.remote-placeholder{position:absolute;inset:0;display:grid;place-items:center;color:#97acc0;font-size:12px;background:radial-gradient(circle at center,rgba(59,90,120,.22),transparent 65%)}
+.meet-call-controls{display:flex;justify-content:center;align-items:center;gap:8px;flex-wrap:wrap}.meet-call-controls button{min-width:112px}.meet-privacy{margin:0 2px}.meet-nav{border-color:rgba(0,245,160,.35);color:#a9ffe0}
+@media(max-width:640px){.top .row-btn{gap:3px;flex-wrap:wrap;justify-content:flex-end;max-width:65vw}.top .row-btn button{min-width:40px;min-height:40px;font-size:13px;padding:6px}.meet-shell{padding:9px}.meet-video-grid{grid-template-columns:1fr;gap:8px}.meet-video-card{min-height:32vh;aspect-ratio:16/10}.meet-join-row,.meet-invite-row{flex-wrap:wrap}.meet-join-row input,.meet-invite-row input{flex-basis:100%}.meet-call-controls button{flex:1;min-width:100px}}
+@media(prefers-reduced-motion:reduce){.gesture-effect,.gesture-effect *{animation-duration:.01ms!important;animation-iteration-count:1!important}}
+
+/* Gesture action variants */
+.effect-rainbow{background:linear-gradient(115deg,rgba(255,40,80,.18),rgba(255,170,35,.15),rgba(255,250,90,.14),rgba(40,255,160,.15),rgba(50,170,255,.17),rgba(190,70,255,.18));animation:rainbow-overlay 1.8s ease-in-out both}
+.effect-rainbow i{position:absolute;left:var(--x);top:35%;width:7px;height:17px;border-radius:2px;background:hsl(calc(var(--i)*13deg),100%,65%);animation:confetti-fall 1.8s cubic-bezier(.15,.7,.25,1) var(--d) both}
+@keyframes rainbow-overlay{0%{opacity:0}14%,66%{opacity:1}100%{opacity:0}}
+.effect-flash{background:rgba(225,250,255,.25);animation:shatter-flash .65s ease-out both}
+.energy-flash{position:absolute;inset:0;background:radial-gradient(circle at center,rgba(255,255,255,.85),rgba(99,233,255,.25) 30%,transparent 70%);animation:energy-flash .65s ease-out both}
+@keyframes energy-flash{0%{opacity:0}12%{opacity:1}100%{opacity:0}}
+
+.effect-rainbow .rainbow-wash{position:absolute;inset:-15%;background:linear-gradient(115deg,rgba(255,0,80,.18),rgba(255,155,0,.18),rgba(255,245,0,.18),rgba(0,245,145,.18),rgba(0,150,255,.2),rgba(160,40,255,.2));filter:blur(12px);animation:rainbow-wash 1.8s ease-in-out both}@keyframes rainbow-wash{0%,100%{opacity:0;transform:scale(.92) rotate(-3deg)}12%,78%{opacity:1;transform:scale(1.03) rotate(2deg)}}
