@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <meta name="theme-color" content="#05070a">
-<meta name="application-name" content="Skeleton v18 Performance Lab">
+<meta name="application-name" content="Skeleton v19.2 Performance Lab">
 <meta name="color-scheme" content="dark">
-<title>Skeleton v18 — Low Latency Performance Lab</title>
+<title>Skeleton v19.2 — Low Latency Performance Lab</title>
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -31,7 +31,7 @@
   <pre id="tele" class="tele"></pre>
 
   <div class="top">
-    <div class="brand glass">HAND <span>·</span> SKELETON v18</div>
+    <div class="brand glass">HAND <span>·</span> SKELETON v19.2</div>
     <div class="row-btn">
       <button id="snapBtn" title="Chụp ảnh (S)">📸</button>
       <button id="handBtn" title="Bật/tắt skeleton tay (H)">✋</button>
@@ -41,7 +41,7 @@
       <button id="switchBtn" title="Đổi camera (C)">↔</button>
       <button id="fullBtn" title="Toàn màn hình (F)">⛶</button>
       <button id="labBtn" title="Mở Performance Lab">⚙ LAB</button>
-      <a id="wonderBtn" class="nav-link" href="/wondersnap/" aria-label="Mở WonderSnap 3D particle mode">✨ WONDER</a>
+      <button id="wonderBtn" class="nav-link" type="button" aria-label="Mở WonderSnap 3D particle mode" aria-expanded="false">✨ WONDER</button>
     </div>
   </div>
 
@@ -73,6 +73,11 @@
   </div>
   <div id="error" class="error glass hidden"></div>
 </div>
+  <section id="wonderOverlay" class="wonder-overlay hidden" aria-label="WonderSnap 3D" aria-hidden="true">
+    <div class="wonder-toolbar"><strong>WONDER · 3D</strong><span>Camera được xử lý trong trình duyệt</span><button id="closeWonderBtn" type="button" class="no-fingertip">✕ Quay lại Skeleton</button></div>
+    <iframe id="wonderFrame" title="WonderSnap 3D particle models" src="about:blank" allow="camera; fullscreen; autoplay" allowfullscreen loading="lazy"></iframe>
+    <p id="wonderStatus" class="wonder-status" role="status">Đang chuẩn bị WonderSnap…</p>
+  </section>
 <script>window.SKELETON_CONFIG = window.SKELETON_CONFIG || {};</script>
 <script type="module" src="js/main.js"></script>
 </body>
