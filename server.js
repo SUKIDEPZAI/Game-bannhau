@@ -1,24 +1,41 @@
-// Skeleton v19.5: local inference, validated WonderSnap runtime, and aggregate PostgreSQL telemetry.
+// Skeleton v20.0: local inference, validated WonderSnap runtime, WebRTC meeting signaling, and aggregate telemetry.
 import express from "express";
 import compression from "compression";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Pool } from "pg";
+import { createHmac } from "node:crypto";
+import { MeetingHub } from "./lib/meeting-hub.js";
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
-const VERSION = "19.5.0";
+const VERSION = "20.0.0";
 const app = express();
 app.disable("x-powered-by");
 app.set("trust proxy", 1);
 app.use(compression());
 app.use(express.json({ limit: "32kb" }));
+const allowedOrigins = new Set((process.env.ALLOWED_ORIGIN || "").split(",").map(x => x.trim()).filter(Boolean));
 app.use((_q, res, next) => {
-  const origin = _q.headers.origin; const allowed = (process.env.ALLOWED_ORIGIN || "*").split(",").map(x => x.trim());
-  if (!origin || allowed.includes("*") || allowed.includes(origin)) res.set("Access-Control-Allow-Origin", allowed.includes("*") ? "*" : origin);
-  res.set({ "Vary": "Origin", "Cross-Origin-Resource-Policy": "cross-origin", "Timing-Allow-Origin": "*", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "strict-origin-when-cross-origin", "Permissions-Policy": "camera=(self), microphone=(), geolocation=()", "Access-Control-Allow-Methods": "GET,POST,OPTIONS", "Access-Control-Allow-Headers": "Content-Type,Authorization" });
-  if (_q.method === "OPTIONS") return res.sendStatus(204);
+  const origin = _q.headers.origin;
+  const sameOrigin = `${_q.protocol}://${_q.get("host")}`;
+  // Same-origin calls need no CORS header. Cross-origin access is opt-in, never wildcard by default.
+  if (origin && (origin === sameOrigin || allowedOrigins.has(origin))) res.set("Access-Control-Allow-Origin", origin);
+  res.set({
+    "Vary": "Origin",
+    "Cross-Origin-Resource-Policy": "same-site",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Permissions-Policy": "camera=(self), microphone=(self), geolocation=()",
+    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type,Authorization",
+    "Cross-Origin-Opener-Policy": "same-origin-allow-popups",
+    "X-Frame-Options": "SAMEORIGIN",
+    "Content-Security-Policy": "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' https://storage.googleapis.com https://cdn.jsdelivr.net; worker-src 'self' blob:; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'"
+  });
+  if (process.env.NODE_ENV === "production") res.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  if (_q.method === "OPTIONS") return origin && origin !== sameOrigin && !allowedOrigins.has(origin) ? res.sendStatus(403) : res.sendStatus(204);
   next();
 });
 
@@ -30,7 +47,7 @@ app.get("/healthz", async (_q, res) => {
   const ok = db !== "error" && db !== "starting";
   res.set("Cache-Control", "no-store").status(ok ? 200 : 503).json({ ok, database: db, version: VERSION });
 });
-app.get("/version.json", (_q, res) => res.set("Cache-Control", "no-store").json({ version: VERSION, build: process.env.RENDER_GIT_COMMIT || "local", updatedAt: "2026-10-10" }));
+app.get("/version.json", (_q, res) => res.set("Cache-Control", "no-store").json({ version: VERSION, build: process.env.RENDER_GIT_COMMIT || "local", updatedAt: "2026-10-11" }));
 
 app.use("/vendor", express.static(path.join(dir, "node_modules/@mediapipe/tasks-vision"), { maxAge: "365d", immutable: true, setHeaders: (res, p) => { if (p.endsWith(".cjs")) res.type("application/javascript"); } }));
 // WonderSnap is an isolated, upstream-vendored 3D particle experience. Its local model and JS assets are served separately from Skeleton APIs.
@@ -61,7 +78,7 @@ app.get("/models/:f", async (req, res) => {
 });
 
 // PostgreSQL is optional locally. Never put database calls in the per-camera-frame loop.
-const pool = process.env.DATABASE_URL ? new Pool({ connectionString: process.env.DATABASE_URL, ssl: process.env.PGSSLMODE === "disable" ? false : { rejectUnauthorized: false }, max: 4, idleTimeoutMillis: 10000, connectionTimeoutMillis: 3000 }) : null;
+const pool = process.env.DATABASE_URL ? new Pool({ connectionString: process.env.DATABASE_URL, ssl: process.env.PGSSLMODE === "disable" ? false : { rejectUnauthorized: process.env.PGSSL_REJECT_UNAUTHORIZED !== "false" }, max: 4, idleTimeoutMillis: 10000, connectionTimeoutMillis: 3000 }) : null;
 let dbReady = false;
 async function initDb() {
   if (!pool) return;
@@ -84,10 +101,63 @@ const requireAdmin = (req, res, next) => {
   if (req.get("authorization") !== `Bearer ${process.env.ADMIN_TOKEN}`) return res.status(401).json({ error: "unauthorized" });
   next();
 };
+// Ephemeral WebRTC signaling. Audio/video streams are peer-to-peer and never pass through Express.
+const meetingHub = new MeetingHub();
+const meetingRate = new Map();
+function limitMeet(kind, max, windowMs = 60000) {
+  return (req, res, next) => {
+    const now = Date.now();
+    const key = `${kind}:${req.ip || req.socket.remoteAddress || "unknown"}`;
+    const hit = meetingRate.get(key);
+    if (!hit || now - hit.start >= windowMs) meetingRate.set(key, { start: now, count: 1 });
+    else if (++hit.count > max) return res.status(429).json({ error: "meeting rate limit exceeded" });
+    if (meetingRate.size > 2000) for (const [k, v] of meetingRate) if (now - v.start > windowMs * 2) meetingRate.delete(k);
+    next();
+  };
+}
+function hubResponse(res, result) {
+  if (!result.ok) return res.status(result.status || 400).json({ error: result.error || "meeting request failed" });
+  return res.set("Cache-Control", "no-store").json(result);
+}
+const isPeerId = value => typeof value === "string" && /^[a-zA-Z0-9_-]{16,80}$/.test(value);
+app.get("/api/meet/config", limitMeet("meet-config", 120), (_q, res) => {
+  const iceServers = [
+    { urls: "stun:stun.l.google.com:19302" },
+    { urls: "stun:stun.cloudflare.com:3478" }
+  ];
+  const urls = (process.env.TURN_URLS || "").split(",").map(x => x.trim()).filter(Boolean);
+  const secret = process.env.TURN_SHARED_SECRET || "";
+  if (urls.length && secret) {
+    const ttl = Math.max(300, Math.min(86400, Number(process.env.TURN_CREDENTIAL_TTL_SEC) || 3600));
+    const username = `${Math.floor(Date.now() / 1000) + ttl}:${String(process.env.TURN_USERNAME_PREFIX || "skeleton").slice(0, 40)}`;
+    const credential = createHmac("sha1", secret).update(username).digest("base64");
+    iceServers.push({ urls, username, credential, credentialType: "password" });
+  }
+  res.set("Cache-Control", "no-store").json({ iceServers, turnConfigured: iceServers.length > 2, credentialTtlSec: iceServers.length > 2 ? Math.max(300, Math.min(86400, Number(process.env.TURN_CREDENTIAL_TTL_SEC) || 3600)) : 0 });
+});
+app.post("/api/meet/rooms", limitMeet("meet-create", 10), (req, res) => {
+  if (!isPeerId(req.body?.peerId)) return res.status(400).json({ error: "valid peerId required" });
+  hubResponse(res, meetingHub.create(req.body.peerId));
+});
+app.post("/api/meet/rooms/:roomId/join", limitMeet("meet-join", 20), (req, res) => {
+  if (!isPeerId(req.body?.peerId)) return res.status(400).json({ error: "valid peerId required" });
+  hubResponse(res, meetingHub.join(req.params.roomId, req.body.peerId));
+});
+app.get("/api/meet/rooms/:roomId/state", limitMeet("meet-state", 150), (req, res) => {
+  hubResponse(res, meetingHub.state(req.params.roomId, req.query.peerId));
+});
+app.post("/api/meet/rooms/:roomId/signal", limitMeet("meet-signal", 150), (req, res) => {
+  const { fromPeerId, toPeerId, type, payload } = req.body || {};
+  hubResponse(res, meetingHub.signal(req.params.roomId, fromPeerId, toPeerId, type, payload || {}));
+});
+app.post("/api/meet/rooms/:roomId/leave", limitMeet("meet-leave", 30), (req, res) => {
+  hubResponse(res, meetingHub.leave(req.params.roomId, req.body?.peerId));
+});
+
 app.get("/api/status", async (_q, res) => {
   let database = !pool ? "disabled" : dbReady ? "ready" : "starting", queuedJobs = null, failedJobs = null;
   if (pool && dbReady) { try { const q = await pool.query("SELECT count(*) FILTER (WHERE status='queued')::int AS queued, count(*) FILTER (WHERE status='failed')::int AS failed FROM skeleton_jobs"); queuedJobs = q.rows[0].queued; failedJobs = q.rows[0].failed; } catch { database = "error"; } }
-  res.set("Cache-Control", "no-store").json({ version: VERSION, database, queuedJobs, failedJobs, features: ["latest-frame-wins", "worker-inference", "model-ab-benchmark", "specialist-agents", "postgres-jobs-worker", "wondersnap-webgl2-particle-mode", "wondersnap-catalog-build-validation", "mobile-3d-quality-preset", "fingertip-marker-free-interaction", "bounded-wondersnap-camera-capture"] });
+  res.set("Cache-Control", "no-store").json({ version: VERSION, database, queuedJobs, failedJobs, features: ["latest-frame-wins", "worker-inference", "model-ab-benchmark", "specialist-agents", "postgres-jobs-worker", "wondersnap-webgl2-particle-mode", "wondersnap-catalog-build-validation", "fingertip-marker-free-interaction", "bounded-wondersnap-camera-capture", "webrtc-1to1-meeting", "gesture-screen-crack-effect"] });
 });
 const metricsRate = new Map();
 function rateMetrics(req, res, next) {

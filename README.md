@@ -87,7 +87,7 @@ References:
 
 ## Verification status
 
-Current local verification: 48/48 unit/contract tests pass; 9/9 simulated E2E scenarios pass; `npm run bench` and `npm run sweep` run deterministic simulations. The container had no `node_modules`, and `npm install --no-audit --no-fund` timed out, so a live Express/PostgreSQL smoke test was not run here. Node tests and simulated E2E can verify logic/contract regressions; they cannot establish camera motion-to-photon latency or validate WebGPU on your Android device. Model B is therefore visibly marked experimental until the on-device A/B report confirms both latency and detection rate.
+Historical v19.5 verification snapshot: 48/48 unit/contract tests pass; 9/9 simulated E2E scenarios pass; `npm run bench` and `npm run sweep` run deterministic simulations. The container had no `node_modules`, and `npm install --no-audit --no-fund` timed out, so a live Express/PostgreSQL smoke test was not run here. Node tests and simulated E2E can verify logic/contract regressions; they cannot establish camera motion-to-photon latency or validate WebGPU on your Android device. Model B is therefore visibly marked experimental until the on-device A/B report confirms both latency and detection rate.
 
 
 ## WonderSnap 3D mode (v19)
@@ -114,3 +114,26 @@ The WONDER control opens the WonderSnap experience in an embedded full-screen ov
 - Removes decorative WonderSnap landmark dots and fingertip/dwell rings while preserving pointer positions, gesture detection, hit-testing, dwell timers, and pinch actions.
 - Restores WonderSnap upstream defaults for particle count, DPR, trails, and camera constraints; the previous Skeleton-specific overrides were not backed by a reliable Android latency comparison and did not match the direct route.
 - Keeps once-per-second FPS/inference diagnostics and validates model catalog builds during deployment. These diagnostics do not measure end-to-end motion-to-photon latency; confirm the result on the same device/browser against `/wondersnap/` directly.
+
+
+## v20.0 — Three-stage engineering upgrade
+
+### Stage 1: reliability and security baseline
+- Pinned the project release version to 20.0.0 and added bounded REST signaling for short-lived rooms (maximum two participants, peer validation, rate limits, bounded SDP/ICE payloads, no media relay).
+- Added local-only gesture effects; camera frames and landmarks are not sent to the server for gesture recognition.
+- Keep the upstream WonderSnap vendor step; for reproducible production builds, pin its source commit before deployment.
+
+### Stage 2: real-device performance
+- Existing latest-frame-wins, worker inference, smoothing and telemetry remain intact.
+- Validate camera permissions, WebRTC latency and WebGL2 performance on target Android devices; simulated tests alone do not establish real-device performance.
+
+### Stage 3: interactive features
+- Added an in-app one-to-one video meeting: create a room, share the invite link or 16-character room ID, join, toggle camera/microphone, and leave. The hand-tracking camera is stopped while meeting mode is active to avoid camera contention and resumed when the meeting closes. Pending app startup is invalidated too.
+- Added gesture reactions: index + thumb in a finger-gun pose followed by a rapid forward hand movement triggers a 3-second glass-crack overlay; V-sign produces rainbow + confetti, open palm creates an energy burst, Like creates hearts, fist creates a shockwave, and a fast swipe creates a light slash. The gesture label now distinguishes finger-gun from pointing. These heuristics are approximate and depend on lighting, framing and camera perspective.
+- Current v20 source tests: 66/66 Node test cases passed, including 5 meeting-hub tests; simulated E2E scenarios also pass. This is a source-level test result, not a live two-device call or Render build certification.
+
+### Deployment notes
+- `npm install` installs the declared project dependencies; no separate WebSocket package is required for meeting signaling. Render must deploy the updated `package.json` and `server.js`.
+- WebRTC uses a public STUN server for peer discovery. Some NATs/firewalls require a TURN server; configure one for dependable calls across restrictive networks. The REST signaling service does not forward media.
+- Camera/microphone calls require HTTPS (Render provides HTTPS). Browser permissions must be granted by each participant. Room codes are ephemeral and are not user authentication; do not use this as a private/regulated meeting system without adding authentication, abuse controls and TURN credentials management.
+- No system can be truthfully certified “5/5” from source review alone. Run the test suite and real Android/browser/network checks before production release.
