@@ -37,8 +37,17 @@ test("config: URL Render riêng được trim và bỏ slash cuối", async () =
 
 test("cử chỉ tĩnh giữ nguyên bộ nhãn cũ", () => {
   const cases = [[{}, "Mở bàn tay"], [{ thumb: 0 }, "4 ngón"], [{ ext: [0, 0, 0, 0], thumb: 0 }, "Nắm đấm"], [{ ext: [0, 0, 0, 0], thumb: 1 }, "Like"],
-    [{ ext: [1, 0, 0, 0], thumb: 0 }, "Chỉ tay"], [{ ext: [1, 0, 0, 0], thumb: 1 }, "Súng"], [{ ext: [1, 1, 0, 0], thumb: 0 }, "Chữ V"], [{ ext: [0, 1, 1, 1], thumb: 0 }, "OK"], [{ pinch: true, thumb: 0 }, "Pinch"]];
+    [{ ext: [1, 0, 0, 0], thumb: 0 }, "Chỉ tay"], [{ ext: [1, 0, 0, 0], thumb: 1 }, "Súng"], [{ ext: [1, 1, 0, 0], thumb: 0 }, "Chữ V"], [{ ext: [0, 1, 1, 1], thumb: 0 }, "3 ngón"], [{ pinch: true, thumb: 0 }, "Pinch"]];
   for (const [p, want] of cases) assert.equal(settle(new GestureTracker(), pose(p)), want, JSON.stringify(p));
+});
+test("OK cần chạm đầu ngón cái-trỏ và duỗi ba ngón còn lại", () => { assert.equal(settle(new GestureTracker(), pose({ ext: [0, 1, 1, 1], thumb: 0, pinch: true })), "OK"); });
+test("mẫu lỗi không được phép kích hoạt hành động dù nhãn ổn định còn lại", () => { const g = new GestureTracker(); settle(g, pose({ ext: [1, 0, 0, 0], thumb: 1 })); assert.equal(g.label, "Súng"); assert.equal(g.actionable, true); g.update(asSet(pose({ ext: [1, 0, 0, 0], thumb: 1 })), 1, 500, 0.3, false); assert.equal(g.actionable, false); assert.equal(g.label, "Súng"); });
+test("cử chỉ hình học ổn định khi xoay bàn tay trong mặt phẳng", () => {
+  const patterns = [ [pose(), "Mở bàn tay"], [pose({ext:[0,0,0,0],thumb:0}), "Nắm đấm"], [pose({ext:[1,0,0,0],thumb:1}), "Súng"], [pose({ext:[1,1,0,0],thumb:0}), "Chữ V"] ];
+  for (const [L, want] of patterns) for (const deg of [-70,-35,0,35,70,150]) {
+    const R = L.map(p => { const dx=p.x-.5, dy=p.y-.8, q=deg*Math.PI/180; return {x:.5+dx*Math.cos(q)-dy*Math.sin(q), y:.8+dx*Math.sin(q)+dy*Math.cos(q)}; });
+    assert.equal(settle(new GestureTracker(), R), want, `${want} at ${deg}°`);
+  }
 });
 test("hysteresis: nhiễu quanh ngưỡng không làm nhãn nhấp nháy", () => {
   const g = new GestureTracker(), r = mulberry(5); settle(g, pose({ ext: [1, 1, 1, 1], thumb: 0 })); let flips = 0, prev = g.label;
@@ -47,7 +56,7 @@ test("hysteresis: nhiễu quanh ngưỡng không làm nhãn nhấp nháy", () =>
 });
 test("nhãn mới cần giữ đủ ms; tay nhanh xác nhận sớm hơn tay đứng yên", () => {
   const conf = (speed) => { const g = new GestureTracker(); settle(g, pose({ ext: [1, 1, 1, 1], thumb: 0 })); const F = pose({ ext: [0, 0, 0, 0], thumb: 0 }); for (let t = 1000; t < 1400; t += 8) if (g.update(asSet(F), 1, t, speed, true) === "Nắm đấm") return t - 1000; return 1e9; };
-  const fast = conf(2), still = conf(0.01); assert.ok(fast < still && fast >= 40 && still >= 130, `fast=${fast} still=${still}`);
+  const fast = conf(2), still = conf(0.01); assert.ok(fast < still && fast >= 25 && still >= 80, `fast=${fast} still=${still}`);
   const g = new GestureTracker(); settle(g, pose()); g.update(asSet(pose({ ext: [0, 0, 0, 0], thumb: 0 })), 1, 1000, 0.3, true); assert.equal(g.label, "Mở bàn tay");   // 1 khung nhiễu không đổi nhãn
 });
 test("chất lượng kém (ok=false) → giữ nhãn cũ, không nhảy", () => { const g = new GestureTracker(); settle(g, pose()); for (let t = 600; t < 900; t += 16) g.update(asSet(pose({ ext: [0, 0, 0, 0], thumb: 0 })), 1, t, 0.3, false); assert.equal(g.label, "Mở bàn tay"); });

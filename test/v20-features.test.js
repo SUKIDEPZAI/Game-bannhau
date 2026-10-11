@@ -20,13 +20,20 @@ test('v20 meeting signaling is bounded, validates peers and supports optional TU
   assert.doesNotMatch(server, /new WebSocketServer/);
 });
 
+test('v20.1 guide documents actionable poses and latency lab measures pose classification', () => {
+  const html = read('public/index.html'); const main = read('public/js/main.js'); const gesture = read('public/js/gesture.js');
+  assert.match(html, /id="gestureGuideBtn"/); assert.match(html, /đẩy bàn tay nhanh về gần camera/);
+  assert.match(html, /Chạm đầu ngón cái vào đầu ngón trỏ tạo vòng tròn/);
+  assert.match(html, /id="poseLatency"/); assert.match(main, /M\.pose\.push\(poseMs\)/); assert.match(main, /POSE.*hình học \+ ổn định nhãn/);
+  assert.match(read("server.js"), /const VERSION = "20\.1\.0"/); assert.match(gesture, /angleDeg/); assert.match(gesture, /fingerAngleEnter/); assert.match(gesture, /label = "OK"/);
+});
 test('v20 gesture actions are local, rate-limited, and shatter effect lasts 3 seconds', () => {
   const main = read('public/js/main.js'); const effects = read('public/js/effects-layer.js'); const css = read('public/css/style.css');
-  assert.match(main, /st\.scale > s\.gunStartScale \* 1\.28/); assert.match(main, /effects\.play\("shatter", 3000/);
+  assert.match(main, /ratio >= 1\.18/); assert.match(main, /effects\.play\("shatter", 3000/); assert.match(main, /s\.g\.raw === "Súng"/); assert.match(main, /s\.g\.actionable/);
   assert.match(main, /effects\.play\("rainbow", 1800/); assert.match(main, /effects\.play\("confetti", 1200/); assert.match(main, /effects\.play\("burst", 650/);
   assert.match(main, /effects\.play\("hearts", 1400/); assert.match(main, /effects\.play\("shockwave", 1000/); assert.match(main, /effects\.play\("slash", 750/);
   assert.match(effects, /now - \(this\.lastPlay\.get\(name\) \?\? -Infinity\) < cooldown/);
-  assert.match(effects, /name === "shatter" \? 3000/); assert.match(effects, /name === "rainbow"/); assert.match(css, /\.effect-shatter/);
+  assert.match(effects, /name === "shatter" \? 3000/); assert.match(effects, /"ok"/); assert.match(effects, /name === "rainbow"/); assert.match(css, /\.effect-shatter/);
   assert.match(htmlText(), /id="gestureEffects"/);
 });
 function htmlText() { return read('public/index.html'); }
