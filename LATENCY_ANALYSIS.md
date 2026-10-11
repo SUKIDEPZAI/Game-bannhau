@@ -111,3 +111,13 @@ So sánh: *không lọc* = 0 trễ + rung; *EMA* = trễ cố định; *Kalman* 
 ## v19 integration note
 
 WonderSnap is served as an isolated route to prevent its WebGL2 particle workload from interfering with Skeleton tracking. It is fetched from upstream during the Render web build; it was not downloaded into this local archive because shell network access to GitHub was unavailable. See `docs/WONDERSNAP_INTEGRATION.md`.
+
+
+## v19.1 PostgreSQL boundary
+
+PostgreSQL must not process a 500-frame/s camera stream. It stores aggregate metrics and maintenance data only; real-time inference remains client-side with latest-frame-wins. Verify AI inference P95, capture-to-result age P95, render P95, camera FPS and display FPS on a physical Android device before making latency claims.
+
+
+## v19.2 research audit
+
+External project screening confirmed that Skeleton already has a local MediaPipe worker, One Euro-style smoothing, and bounded percentile telemetry, so duplicate libraries would increase surface area without an established latency win. New code focuses on the gaps that can be verified: isolated WonderSnap MediaPipe dependencies, deterministic smoke builds of every procedural catalog model, conservative mobile particle/DPR presets, and once-per-second in-frame FPS/inference timing. These are deployment/build checks and runtime observations, not an Android benchmark. PostgreSQL remains aggregate-only and is not used as a 500-frame/s transport.

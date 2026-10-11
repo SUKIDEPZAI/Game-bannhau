@@ -1,4 +1,4 @@
-# Skeleton v18 Blueprint. The web service keeps camera inference client-side.
+# Skeleton v19.3 Blueprint. The web service keeps camera inference client-side.
 # Render Background Worker is separate so maintenance jobs never block camera/API traffic.
 services:
   - type: web

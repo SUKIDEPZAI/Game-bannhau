@@ -93,3 +93,25 @@ Current local verification: 48/48 unit/contract tests pass; 9/9 simulated E2E sc
 ## WonderSnap 3D mode (v19)
 
 The Render web build vendors the MIT-licensed [WonderSnap project](https://github.com/AkbarSheikh-debug/wondersnap) and serves it at `/wondersnap/`. Use the WONDER link in the main screen. On Android, stop Skeleton tracking before starting WonderSnap to avoid two concurrent camera/GPU loops. See `docs/WONDERSNAP_INTEGRATION.md`.
+
+
+### v19.1 embedded WonderSnap and camera lifecycle
+
+The WONDER control opens the WonderSnap experience in an embedded full-screen overlay. Skeleton releases its camera before entering and requests it again on return. On initial page entry it calls the existing camera startup path to request permission; browser permission policy is still respected. PostgreSQL receives aggregate metrics only and is never used for per-frame inference. See `docs/WONDERSNAP_INTEGRATION.md`.
+
+
+## v19.2 self-audit and WonderSnap performance
+
+- The deployment vendor step runs `scripts/verify-wondersnap-models.mjs` against every upstream catalog model. Each model is built with a deterministic low-count sample and its target/offset/tint/pick buffers plus fit scale are checked for shape and finite values. This catches procedural model/build-data errors, but cannot prove every GPU will render it correctly.
+- WonderSnap installs its own declared MediaPipe Tasks Vision runtime under `wondersnap/node_modules`; Skeleton keeps its existing pinned runtime.
+- Opening WONDER chooses a conservative startup particle/DPR tier from touch, CPU-core and memory hints, preserving all model definitions. WonderSnap reports only coarse FPS, measured inference time and particle count to the parent once per second; this appears in the overlay and is not raw frame telemetry.
+- PostgreSQL remains outside the camera loop. The normal Skeleton metrics path is opt-in and aggregate-only; 500 images/frames per second are not sent to PostgreSQL.
+- These checks are Node unit/contract tests and deterministic procedural model smoke builds, not a real-device Android benchmark or visual GPU certification.
+
+## v19.3 — WonderSnap low-workload integration
+
+- Uses the upstream `AkbarSheikh-debug/wondersnap` source at Render build time and keeps its runtime isolated under `/wondersnap/`.
+- Removed the fingertip circles/progress rings from Skeleton's four hand-rendering styles. Gesture hit-testing, dwell activation, pinch clicks, and button hover are unchanged because they remain in `interact.js`.
+- Reduced WonderSnap's startup particle presets (35k touch/unknown, 65k balanced desktop, 110k high tier) and caps pixel ratio to reduce GPU fill work.
+- The vendor build applies a 640×480@30 capture preset to WonderSnap and fails fast if the expected upstream camera config changes.
+- These are workload reductions, not a guarantee of a specific end-to-end latency. Validate on the target Android device and compare the live FPS/inference readout.

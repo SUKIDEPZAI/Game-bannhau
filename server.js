@@ -1,4 +1,4 @@
-// Skeleton v18: static app + model cache + PostgreSQL API; jobs run in a separate Render worker.
+// Skeleton v19.3: local inference, validated WonderSnap runtime, and aggregate PostgreSQL telemetry.
 import express from "express";
 import compression from "compression";
 import fs from "node:fs";
@@ -8,7 +8,7 @@ import { Pool } from "pg";
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
-const VERSION = "19.0.0";
+const VERSION = "19.3.0";
 const app = express();
 app.disable("x-powered-by");
 app.set("trust proxy", 1);
@@ -34,6 +34,8 @@ app.get("/version.json", (_q, res) => res.set("Cache-Control", "no-store").json(
 
 app.use("/vendor", express.static(path.join(dir, "node_modules/@mediapipe/tasks-vision"), { maxAge: "365d", immutable: true, setHeaders: (res, p) => { if (p.endsWith(".cjs")) res.type("application/javascript"); } }));
 // WonderSnap is an isolated, upstream-vendored 3D particle experience. Its local model and JS assets are served separately from Skeleton APIs.
+app.use("/wondersnap/node_modules", express.static(path.join(dir, "wondersnap", "node_modules"), { maxAge: "365d", immutable: true }));
+// Fallback for shared dependencies, after WonderSnap's isolated runtime has first refusal.
 app.use("/wondersnap/node_modules", express.static(path.join(dir, "node_modules"), { maxAge: "365d", immutable: true }));
 app.use("/wondersnap", express.static(path.join(dir, "wondersnap"), { maxAge: 0, setHeaders: (res, file) => { if (/\.(html|js|css)$/.test(file)) res.set("Cache-Control", "no-store, max-age=0, must-revalidate"); } }));
 app.get("/wondersnap", (_q, res) => res.redirect(302, "/wondersnap/"));
@@ -85,7 +87,7 @@ const requireAdmin = (req, res, next) => {
 app.get("/api/status", async (_q, res) => {
   let database = !pool ? "disabled" : dbReady ? "ready" : "starting", queuedJobs = null, failedJobs = null;
   if (pool && dbReady) { try { const q = await pool.query("SELECT count(*) FILTER (WHERE status='queued')::int AS queued, count(*) FILTER (WHERE status='failed')::int AS failed FROM skeleton_jobs"); queuedJobs = q.rows[0].queued; failedJobs = q.rows[0].failed; } catch { database = "error"; } }
-  res.set("Cache-Control", "no-store").json({ version: VERSION, database, queuedJobs, failedJobs, features: ["latest-frame-wins", "worker-inference", "model-ab-benchmark", "specialist-agents", "postgres-jobs-worker", "wondersnap-webgl2-particle-mode"] });
+  res.set("Cache-Control", "no-store").json({ version: VERSION, database, queuedJobs, failedJobs, features: ["latest-frame-wins", "worker-inference", "model-ab-benchmark", "specialist-agents", "postgres-jobs-worker", "wondersnap-webgl2-particle-mode", "wondersnap-catalog-build-validation", "mobile-3d-quality-preset", "fingertip-marker-free-interaction", "bounded-wondersnap-camera-capture"] });
 });
 const metricsRate = new Map();
 function rateMetrics(req, res, next) {
