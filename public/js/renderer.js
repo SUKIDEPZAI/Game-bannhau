@@ -1,6 +1,6 @@
 // Skeleton TAY v14 (không còn đầu/mặt). Phong cách: XƯƠNG (mặc định) · NEON · WIRE · HOLO.
 // XƯƠNG: xương bàn tay (wrist→MCP) + đốt ngón (MCP→PIP→DIP→TIP) vẽ như xương: thân sáng, viền tối, khớp tròn nhỏ dần về phía đầu ngón.
-// Đầu ngón = VÒNG TRÒN tương tác (hover sáng lên, vòng tiến trình khi giữ yên, gợn sóng khi bấm). Không cấp phát trong vòng vẽ; mỗi lớp gộp 1 path.
+// Đầu ngón không vẽ marker; tương tác hover/dwell/pinch được xử lý độc lập trong interact.js.
 const FINGER = ["#ff4fa3", "#ffdc3a", "#00f5a0", "#45a3ff", "#b96cff", "#e8f4ff"];
 const TIPS = [4, 8, 12, 16, 20], TAU = 6.2832, ACC = "#72f2ff", BONE = "#f2f6fb", INK = "#04101a";
 const TIPK = (() => { const a = new Int8Array(21).fill(-1); TIPS.forEach((v, k) => a[v] = k); return a; })();
@@ -31,7 +31,8 @@ export class Renderer {
     const size = Math.hypot((d[0] - d[18]) * W, (d[1] - d[19]) * H);   // wrist → MCP giữa (landmark 9)
     g.lineCap = g.lineJoin = "round";
     if (this.style === 0) this.bones(d, size, al, W, H); else this.lines(d, conn, size, al, W, H, this.style);
-    this.tips(s, size, al, W, H, now);
+    // Fingertip marker visuals are intentionally disabled; hit-testing and dwell/pinch
+    // interaction remain in interact.js and continue to use the same landmark coordinates.
     if (this.fx.trail) this.drawTrail(s, size, now);
     if (this.fx.text) this.tag(label, d[24] * W, Math.min(d[17], d[25], d[33]) * H - size * .55, "#fff", al, size);
   }
@@ -71,23 +72,8 @@ export class Renderer {
     }
   }
 
-  // ---- ĐẦU NGÓN: vòng tròn tương tác (dùng chung mọi phong cách) ----
-  tips(s, size, al, W, H, now) {
-    const g = this.g, d = s.d, ui = s.ui, base = Math.max(6, size * .085), lw = Math.max(2, size * .022);
-    for (let k = 0; k < 5; k++) {
-      const i = TIPS[k], x = d[i * 2] * W, y = d[i * 2 + 1] * H, hov = ui ? ui.hov[k] : 0, pr = ui ? ui.prog[k] : 0, r = base * (hov ? 1.3 : 1);
-      g.beginPath(); g.arc(x, y, r, 0, TAU);
-      g.globalAlpha = al * (hov ? .45 : .26); g.fillStyle = FINGER[k]; g.fill();                      // nền mờ
-      g.globalAlpha = al; g.strokeStyle = hov ? "#fff" : FINGER[k]; g.lineWidth = hov ? lw * 1.3 : lw; g.stroke();   // viền
-      g.fillStyle = "#fff"; g.beginPath(); g.arc(x, y, r * .3, 0, TAU); g.fill();                     // chấm tâm
-      if (pr > 0) { g.strokeStyle = "#fff"; g.lineWidth = Math.max(3, size * .035); g.beginPath(); g.arc(x, y, r + size * .04, -1.5708, -1.5708 + TAU * pr); g.stroke(); }   // vòng tiến trình giữ yên
-    }
-    if (ui && now - ui.flash < 320) {                                                                 // gợn sóng khi vừa bấm
-      const f = (now - ui.flash) / 320; g.strokeStyle = "#00f5a0"; g.lineWidth = Math.max(2, size * .03) * (1 - f); g.globalAlpha = al * (1 - f);
-      for (let k = 0; k < 5; k++) if (ui.hov[k] || k < 2) { g.beginPath(); g.arc(d[TIPS[k] * 2] * W, d[TIPS[k] * 2 + 1] * H, base * (1.4 + f * 2.2), 0, TAU); g.stroke(); }
-    }
-    g.globalAlpha = 1;
-  }
+  // Fingertip visuals intentionally omitted in all styles. Interaction is handled by Interact.update(),
+  // independently of rendering, so hover/dwell/pinch clicks remain active without on-finger circles.
 
   lasers(a, b) {                                                   // tia sáng giữa đầu ngón hai tay
     if (!this.fx.lasers) return;

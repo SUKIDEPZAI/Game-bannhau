@@ -7,6 +7,7 @@ import { Interact } from "./interact.js";
 import { Metric, fmtP, Recorder } from "./telemetry.js";
 import { PerfController } from "./perf.js";
 import { pickAssignment } from "./tracking.js";
+import { wonderQualityTier } from "./wondersnap-quality.js";
 import { AIAgentSuite } from "./ai-agents.js";
 import { AgentOrchestrator, ABBenchmark, InterruptibleWait } from "./agent-orchestrator.js";
 
@@ -470,8 +471,75 @@ const toggleIx = () => { ix.on = !ix.on; $("uiBtn").classList.toggle("off", !ix.
 $("uiBtn").onclick = toggleIx;
 $("fullBtn").onclick = $("fullMain").onclick = full;
 $("switchBtn").onclick = () => { facing = facing === "user" ? "environment" : "user"; if (running || cameraNeedsRetry) return startCamera(); };
+
+// Embedded WonderSnap is lazy-loaded only when opened. Stop Skeleton's stream first so
+// Android devices do not contend for the same camera/GPU; resume tracking on return.
+const wonderOverlay = $("wonderOverlay"), wonderFrame = $("wonderFrame"), wonderBtn = $("wonderBtn");
+let wonderOpen = false;
+function openWonder() {
+  if (wonderOpen) return;
+  wonderOpen = true;
+  stopCamera();
+  wonderOverlay.classList.remove("hidden"); wonderOverlay.setAttribute("aria-hidden", "false");
+  wonderBtn.setAttribute("aria-expanded", "true");
+  $("wonderStatus").textContent = "Đang tải model và giao diện 3D…";
+  const timeout = setTimeout(() => { if (wonderOpen) $("wonderStatus").textContent = "Nếu 3D chưa hiện, kiểm tra kết nối, WebGL2 và quyền camera."; }, 12000);
+  wonderFrame.onload = () => { clearTimeout(timeout); if (wonderOpen) $("wonderStatus").textContent = "WonderSnap đã tải. Đang khởi tạo camera và model 3D…"; };
+  wonderFrame.src = wonderEntryUrl();
+}
+
+// Conservative pre-run quality tier: preserves every model while reducing GPU work on
+// mobile/unknown hardware. This is a startup heuristic, not a measured performance claim.
+function wonderEntryUrl() {
+  const quality = wonderQualityTier({
+    coarse: window.matchMedia?.("(pointer: coarse)")?.matches,
+    maxTouchPoints: navigator.maxTouchPoints,
+    width: innerWidth,
+    hardwareConcurrency: navigator.hardwareConcurrency,
+    deviceMemory: navigator.deviceMemory,
+    devicePixelRatio: window.devicePixelRatio,
+  });
+  const query = new URLSearchParams({ n: String(quality.particles), dpr: String(quality.dpr), trails: String(quality.trails), autostart: "camera" });
+  return `/wondersnap/?${query.toString()}`;
+}
+
+// WonderSnap sends only coarse FPS/inference timing once per second, never images or landmarks.
+addEventListener("message", (event) => {
+  if (!wonderOpen || event.origin !== location.origin || event.source !== wonderFrame.contentWindow) return;
+  const data = event.data;
+  if (!data || data.type !== "skeleton:wondersnap:metrics") return;
+  const fps = typeof data.fps === "number" ? data.fps : NaN;
+  const aiMs = typeof data.aiMs === "number" ? data.aiMs : NaN;
+  const particleCount = typeof data.particles === "number" ? data.particles : NaN;
+  const fpsText = Number.isFinite(fps) && fps >= 0 && fps <= 300 ? `${Math.round(fps)} FPS` : "FPS chưa đo được";
+  const aiText = Number.isFinite(aiMs) && aiMs >= 0 && aiMs <= 5000 ? ` · inference ${aiMs.toFixed(1)} ms` : "";
+  const nText = Number.isInteger(particleCount) && particleCount >= 5000 && particleCount <= 1000000 ? ` · ${Math.round(particleCount / 1000)}k particles` : "";
+  const model = typeof data.model === "string" ? data.model.slice(0, 64) : "model 3D";
+  $("wonderStatus").textContent = `${model} · ${fpsText}${aiText}${nText}`;
+  if (Number.isFinite(fps) && fps > 0 && fps < 25) $("wonderStatus").textContent += " · gợi ý: đóng ứng dụng nền / dùng máy nhẹ hơn";
+});
+function closeWonder() {
+  if (!wonderOpen) return;
+  wonderOpen = false;
+  wonderOverlay.classList.add("hidden"); wonderOverlay.setAttribute("aria-hidden", "true");
+  wonderBtn.setAttribute("aria-expanded", "false");
+  // Unload the iframe to stop its camera/inference loop while Skeleton resumes.
+  wonderFrame.onload = null;
+  wonderFrame.src = "about:blank";
+  void requestStart();
+}
+wonderBtn.addEventListener("click", openWonder);
+$("closeWonderBtn").addEventListener("click", closeWonder);
+addEventListener("keydown", (e) => { if (e.key === "Escape" && wonderOpen) closeWonder(); });
 addEventListener("keydown", (e) => {
   const k = e.key.toLowerCase();
   if (k === "f") full(); else if (k === "c") $("switchBtn").click(); else if (k === "s") snapshot(); else if (k === "v") cycleStyle(); else if (k === "i") toggleIx();
   else if (k === "p") cycleProfile(); else if (k === "t") $("tele").classList.toggle("hidden"); else if (k === "r") { if (!rec.toggle() && rec.rows.length) { const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(new Blob([rec.toJSONL()], { type: "application/jsonl" })), download: `replay-${Date.now()}.jsonl` }); a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); } showError(rec.on ? "● Đang ghi replay (R để dừng + tải)" : "Đã lưu replay", 2500); } else if (k === "h") $("handBtn").click();
 });
+
+
+// v19: request camera permission on entry. Browsers may defer/deny the prompt; the
+// existing start buttons remain available for retry and no permission is bypassed.
+if (document.visibilityState === "visible") {
+  queueMicrotask(() => { if (!wonderOpen && !running) void requestStart(); });
+}
