@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <meta name="theme-color" content="#05070a">
-<meta name="application-name" content="Skeleton v19.2 Performance Lab">
+<meta name="application-name" content="Skeleton v20.0 Gesture & Meet Lab">
 <meta name="color-scheme" content="dark">
-<title>Skeleton v19.2 — Low Latency Performance Lab</title>
+<title>Skeleton v20.0 — Gesture & Meet Lab</title>
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -31,7 +31,7 @@
   <pre id="tele" class="tele"></pre>
 
   <div class="top">
-    <div class="brand glass">HAND <span>·</span> SKELETON v19.2</div>
+    <div class="brand glass">HAND <span>·</span> SKELETON v20.0</div>
     <div class="row-btn">
       <button id="snapBtn" title="Chụp ảnh (S)">📸</button>
       <button id="handBtn" title="Bật/tắt skeleton tay (H)">✋</button>
@@ -42,6 +42,7 @@
       <button id="fullBtn" title="Toàn màn hình (F)">⛶</button>
       <button id="labBtn" title="Mở Performance Lab">⚙ LAB</button>
       <button id="wonderBtn" class="nav-link" type="button" aria-label="Mở WonderSnap 3D particle mode" aria-expanded="false">✨ WONDER</button>
+      <button id="meetBtn" class="nav-link meet-nav" type="button" aria-label="Mở phòng gặp mặt trực tuyến">📹 GẶP MẶT</button>
     </div>
   </div>
 
@@ -56,6 +57,7 @@
       <div class="pill glass">⚡ <b id="prof">BALANCED</b></div>
       <div class="pill glass">PING <b id="ping">--</b></div>
       <div class="pill glass">AI MODEL <b id="modelState">OFF</b></div>
+      <div class="pill glass">HÀNH ĐỘNG <b id="actionHint">Đang chờ cử chỉ</b></div>
     </div>
     <div class="row-btn">
       <button id="startBtn" class="primary">📷 Bật camera</button>
@@ -66,18 +68,39 @@
   <div id="welcome" class="center">
     <div class="dialog">
       <h1>AI Pose Camera</h1>
-      <p>Skeleton bàn tay 21 điểm, ưu tiên phản hồi thấp; dùng Performance Lab để so sánh MediaPipe với WebGPU ngay trên thiết bị. <b>Chạm nút bằng đầu ngón</b>: chỉ tay giữ yên ~0.7 s, hoặc chụm ngón cái + trỏ để bấm.</p>
+      <p>Skeleton bàn tay 21 điểm, ưu tiên phản hồi thấp; dùng Performance Lab để so sánh MediaPipe với WebGPU ngay trên thiết bị. <b>Chạm nút bằng đầu ngón</b>: chỉ tay giữ yên ~0.7 s, hoặc chụm ngón cái + trỏ để bấm. <b>Hành động:</b> tạo dáng súng (ngón trỏ + ngón cái duỗi, các ngón khác gập) rồi đẩy tay nhanh về phía camera để tạo hiệu ứng nứt kính 3 giây; chữ V tạo confetti, mở bàn tay tạo vòng năng lượng, Like tạo trái tim, nắm đấm tạo sóng xung kích và vuốt nhanh tạo vệt chém.</p>
       <div class="btns"><button id="startMain" class="primary">📷 Bắt đầu</button><button id="fullMain">⛶ Fullscreen</button></div>
       <p style="margin:12px 0 0;font-size:11px">Video và landmarks xử lý cục bộ; backend chỉ nhận số liệu hiệu năng tổng hợp khi được gọi, không nhận ảnh/video.</p>
     </div>
   </div>
   <div id="error" class="error glass hidden"></div>
 </div>
-  <section id="wonderOverlay" class="wonder-overlay hidden" aria-label="WonderSnap 3D" aria-hidden="true">
+  <section id="meetOverlay" class="meet-overlay hidden" aria-label="Phòng gặp mặt trực tuyến" aria-hidden="true">
+  <div class="meet-shell">
+    <header class="meet-header"><div><strong>GẶP MẶT · WEBRTC</strong><small id="meetRoomBadge">Cuộc gọi trực tiếp giữa hai thiết bị</small></div><button id="closeMeetBtn" type="button" aria-label="Đóng phòng gặp mặt">✕ Đóng</button></header>
+    <p id="meetStatus" class="meet-status" role="status" aria-live="polite">Tạo phòng mới hoặc nhập mã mời từ người còn lại.</p>
+    <div id="meetInviteRow" class="meet-invite-row hidden"><input id="meetInviteUrl" aria-label="Đường dẫn mời" readonly><button id="copyInviteBtn" type="button">📋 Sao chép link</button></div>
+    <div id="meetLobby" class="meet-lobby">
+      <h2>Gặp nhau ngay trong Skeleton</h2>
+      <p>Tạo phòng rồi gửi link cho người kia. Âm thanh/video đi trực tiếp giữa hai thiết bị; máy chủ chỉ chuyển tín hiệu bắt tay WebRTC.</p>
+      <button id="createRoomBtn" class="primary" type="button">＋ Tạo phòng & gọi</button>
+      <div class="meet-join-row"><input id="meetRoomInput" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="240" placeholder="Mã phòng hoặc đường dẫn mời"><button id="joinRoomBtn" type="button">Tham gia</button></div>
+      <p class="meet-note">Cần HTTPS và quyền camera/microphone. Nếu hai mạng không kết nối trực tiếp được, quản trị viên cần cấu hình dịch vụ TURN.</p>
+    </div>
+    <div id="meetVideoGrid" class="meet-video-grid hidden">
+      <div class="meet-video-card"><video id="localVideo" autoplay playsinline muted></video><span>BẠN · CAMERA CỤC BỘ</span></div>
+      <div class="meet-video-card"><video id="remoteVideo" autoplay playsinline></video><div id="remotePlaceholder" class="remote-placeholder">Đang chờ người tham gia…</div><span>NGƯỜI THAM GIA</span></div>
+    </div>
+    <div id="meetCallControls" class="meet-call-controls hidden"><button id="toggleMicBtn" type="button">🎙 Tắt mic</button><button id="toggleCameraBtn" type="button">📷 Tắt camera</button><button id="hangupBtn" class="danger" type="button">☎ Kết thúc cuộc gọi</button></div>
+    <p class="meet-privacy">Không ghi âm hoặc ghi hình lên máy chủ. Dữ liệu media được truyền qua WebRTC; cấu hình STUN/TURN và mạng của hai bên ảnh hưởng khả năng kết nối.</p>
+  </div>
+</section>
+<section id="wonderOverlay" class="wonder-overlay hidden" aria-label="WonderSnap 3D" aria-hidden="true">
     <div class="wonder-toolbar"><strong>WONDER · 3D</strong><span>Camera được xử lý trong trình duyệt</span><button id="closeWonderBtn" type="button" class="no-fingertip">✕ Quay lại Skeleton</button></div>
     <iframe id="wonderFrame" title="WonderSnap 3D particle models" src="about:blank" allow="camera; fullscreen; autoplay" allowfullscreen loading="lazy"></iframe>
     <p id="wonderStatus" class="wonder-status" role="status">Đang chuẩn bị WonderSnap…</p>
   </section>
+<div id="gestureEffects" aria-hidden="true"></div>
 <script>window.SKELETON_CONFIG = window.SKELETON_CONFIG || {};</script>
 <script type="module" src="js/main.js"></script>
 </body>
