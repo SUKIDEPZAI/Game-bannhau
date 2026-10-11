@@ -15,8 +15,21 @@ const repo = path.join(tmp, 'repo');
 const upstream = 'https://github.com/AkbarSheikh-debug/wondersnap.git';
 const required = ['index.html', 'styles.css', 'src/app.js', 'src/hands.js', 'src/gl/renderer.js', 'src/models/catalog.js', 'src/models/wonders.js', 'src/models/engines.js', 'src/models/vehicles.js', 'src/models/anatomy.js', 'src/models/anatomy2.js', 'src/models/body.js', 'src/models/biology.js', 'src/models/machines.js', 'models/hand_landmarker.task', 'package.json', 'package-lock.json', 'LICENSE'];
 try {
-  console.log(`[vendor] cloning ${upstream}`);
-  execFileSync('git', ['clone', '--depth', '1', '--filter=blob:none', upstream, repo], { stdio: 'inherit', timeout: 180000 });
+  const requestedCommit = String(process.env.WONDERSNAP_COMMIT || '').trim();
+  if (requestedCommit && !/^[0-9a-f]{40}$/i.test(requestedCommit)) throw new Error('WONDERSNAP_COMMIT must be a full 40-character Git commit SHA');
+  if (requestedCommit) {
+    console.log(`[vendor] fetching pinned ${upstream}@${requestedCommit}`);
+    fs.mkdirSync(repo, { recursive: true });
+    execFileSync('git', ['init', repo], { stdio: 'inherit', timeout: 30000 });
+    execFileSync('git', ['-C', repo, 'remote', 'add', 'origin', upstream], { stdio: 'inherit', timeout: 30000 });
+    execFileSync('git', ['-C', repo, 'fetch', '--depth=1', 'origin', requestedCommit], { stdio: 'inherit', timeout: 180000 });
+    execFileSync('git', ['-C', repo, 'checkout', '--detach', 'FETCH_HEAD'], { stdio: 'inherit', timeout: 30000 });
+  } else {
+    console.warn('[vendor] WONDERSNAP_COMMIT is unset; build will record the resolved upstream SHA, but future builds are not pinned. Set a reviewed full SHA in Render for reproducible builds.');
+    execFileSync('git', ['clone', '--depth', '1', '--filter=blob:none', upstream, repo], { stdio: 'inherit', timeout: 180000 });
+  }
+  const upstreamCommit = execFileSync('git', ['-C', repo, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+  console.log(`[vendor] resolved commit ${upstreamCommit}`);
   for (const rel of required) {
     if (!fs.existsSync(path.join(repo, rel))) throw new Error(`Upstream file missing: ${rel}`);
   }
@@ -66,7 +79,7 @@ try {
   console.log('[vendor] installing isolated WonderSnap runtime dependencies');
   execFileSync('npm', ['install', '--prefix', next, '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund'], { stdio: 'inherit', timeout: 240000 });
 
-  fs.writeFileSync(path.join(next, 'UPSTREAM.md'), `# WonderSnap upstream\n\nVendored during the build from ${upstream}\n\nThe upstream project is licensed under MIT; see LICENSE. Upstream src/hands.js camera constraints and the particle/DPR/trail defaults are kept unchanged to match the direct WonderSnap route. The build removes decorative landmark/fingertip circles without changing gesture hit-testing, validates every catalog model with a deterministic 512-particle smoke build, and installs dependencies in an isolated wondersnap/node_modules directory. The embedded parent message carries only coarse FPS/inference timing and the current model label; no frames or landmarks are transmitted.\n`);
+  fs.writeFileSync(path.join(next, 'UPSTREAM.md'), `# WonderSnap upstream\n\nRepository: ${upstream}\nResolved commit: ${upstreamCommit}\nRequested pin: ${requestedCommit || '(unset; configure WONDERSNAP_COMMIT for repeatable builds)'}\n\nThe upstream project is licensed under MIT; see LICENSE. Upstream src/hands.js camera constraints and the particle/DPR/trail defaults are kept unchanged to match the direct WonderSnap route. The build removes decorative landmark/fingertip circles without changing gesture hit-testing, validates every catalog model with a deterministic 512-particle smoke build, and installs dependencies in an isolated wondersnap/node_modules directory. The embedded parent message carries only coarse FPS/inference timing and the current model label; no frames or landmarks are transmitted.\n`);
   fs.rmSync(target, { recursive: true, force: true });
   fs.renameSync(next, target);
   console.log('[vendor] WonderSnap vendored and validated successfully');
