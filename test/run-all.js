@@ -37,7 +37,7 @@ test("config: URL Render riêng được trim và bỏ slash cuối", async () =
 
 test("cử chỉ tĩnh giữ nguyên bộ nhãn cũ", () => {
   const cases = [[{}, "Mở bàn tay"], [{ thumb: 0 }, "4 ngón"], [{ ext: [0, 0, 0, 0], thumb: 0 }, "Nắm đấm"], [{ ext: [0, 0, 0, 0], thumb: 1 }, "Like"],
-    [{ ext: [1, 0, 0, 0], thumb: 0 }, "Chỉ tay"], [{ ext: [1, 1, 0, 0], thumb: 0 }, "Chữ V"], [{ ext: [0, 1, 1, 1], thumb: 0 }, "OK"], [{ pinch: true, thumb: 0 }, "Pinch"]];
+    [{ ext: [1, 0, 0, 0], thumb: 0 }, "Chỉ tay"], [{ ext: [1, 0, 0, 0], thumb: 1 }, "Súng"], [{ ext: [1, 1, 0, 0], thumb: 0 }, "Chữ V"], [{ ext: [0, 1, 1, 1], thumb: 0 }, "OK"], [{ pinch: true, thumb: 0 }, "Pinch"]];
   for (const [p, want] of cases) assert.equal(settle(new GestureTracker(), pose(p)), want, JSON.stringify(p));
 });
 test("hysteresis: nhiễu quanh ngưỡng không làm nhãn nhấp nháy", () => {

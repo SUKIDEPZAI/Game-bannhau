@@ -14,7 +14,7 @@ test('WonderSnap is embedded in Skeleton and camera is requested on entry', () =
   assert.match(main, /wonderFrame\.src = wonderEntryUrl\(\)/);
   assert.match(main, /function openWonder\(\)[\s\S]*?stopCamera\(\)/);
   assert.match(main, /function closeWonder\(\)[\s\S]*?requestStart\(\)/);
-  assert.match(main, /queueMicrotask\(\(\) => \{ if \(!wonderOpen && !running\) void requestStart\(\); \}\)/);
+  assert.match(main, /queueMicrotask\(\(\) => \{ if \(!wonderOpen && !meeting\.opened && !running\) void requestStart\(\); \}\)/);
   assert.match(css, /\.wonder-overlay/);
   assert.doesNotMatch(main, /wonderQualityTier|deviceMemory|hardwareConcurrency/);
   assert.match(main, /new URLSearchParams\(\{ autostart: "camera" \}\)/);
@@ -30,7 +30,7 @@ test('WonderSnap is isolated and only vendored by the Render web build', () => {
   assert.match(render, /name: skeleton-jobs[\s\S]*?buildCommand: npm install\n/);
   assert.match(server, /app\.use\("\/wondersnap\/node_modules"/);
   assert.match(server, /app\.use\("\/wondersnap"/);
-  assert.match(server, /const VERSION = "19\.5\.0"/);
+  assert.match(server, /const VERSION = "20\.0\.0"/);
   assert.match(vendor, /AkbarSheikh-debug\/wondersnap\.git/);
   assert.match(vendor, /src\/models\/catalog\.js/);
   assert.match(vendor, /models\/hand_landmarker\.task/);
