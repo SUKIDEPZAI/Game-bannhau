@@ -100,18 +100,17 @@ The Render web build vendors the MIT-licensed [WonderSnap project](https://githu
 The WONDER control opens the WonderSnap experience in an embedded full-screen overlay. Skeleton releases its camera before entering and requests it again on return. On initial page entry it calls the existing camera startup path to request permission; browser permission policy is still respected. PostgreSQL receives aggregate metrics only and is never used for per-frame inference. See `docs/WONDERSNAP_INTEGRATION.md`.
 
 
-## v19.2 self-audit and WonderSnap performance
+## v19.2 self-audit and WonderSnap performance (historical; startup overrides removed in v19.5)
 
 - The deployment vendor step runs `scripts/verify-wondersnap-models.mjs` against every upstream catalog model. Each model is built with a deterministic low-count sample and its target/offset/tint/pick buffers plus fit scale are checked for shape and finite values. This catches procedural model/build-data errors, but cannot prove every GPU will render it correctly.
 - WonderSnap installs its own declared MediaPipe Tasks Vision runtime under `wondersnap/node_modules`; Skeleton keeps its existing pinned runtime.
-- Opening WONDER chooses a conservative startup particle/DPR tier from touch, CPU-core and memory hints, preserving all model definitions. WonderSnap reports only coarse FPS, measured inference time and particle count to the parent once per second; this appears in the overlay and is not raw frame telemetry.
+- Earlier versions chose particle/DPR tiers from touch, CPU-core and memory hints. This heuristic was removed in v19.5 so WONDER uses the same upstream defaults as `/wondersnap/` opened directly. Coarse FPS, measured inference time and particle count are reported to the parent once per second; no raw frame telemetry is sent.
 - PostgreSQL remains outside the camera loop. The normal Skeleton metrics path is opt-in and aggregate-only; 500 images/frames per second are not sent to PostgreSQL.
 - These checks are Node unit/contract tests and deterministic procedural model smoke builds, not a real-device Android benchmark or visual GPU certification.
 
-## v19.3 — WonderSnap low-workload integration
+## v19.5 — Upstream WonderSnap parity and latency validation
 
 - Uses the upstream `AkbarSheikh-debug/wondersnap` source at Render build time and keeps its runtime isolated under `/wondersnap/`.
-- Removed the fingertip circles/progress rings from Skeleton's four hand-rendering styles. Gesture hit-testing, dwell activation, pinch clicks, and button hover are unchanged because they remain in `interact.js`.
-- Reduced WonderSnap's startup particle presets (35k touch/unknown, 65k balanced desktop, 110k high tier) and caps pixel ratio to reduce GPU fill work.
-- The vendor build applies a 640×480@30 capture preset to WonderSnap and fails fast if the expected upstream camera config changes.
-- These are workload reductions, not a guarantee of a specific end-to-end latency. Validate on the target Android device and compare the live FPS/inference readout.
+- Removes decorative WonderSnap landmark dots and fingertip/dwell rings while preserving pointer positions, gesture detection, hit-testing, dwell timers, and pinch actions.
+- Restores WonderSnap upstream defaults for particle count, DPR, trails, and camera constraints; the previous Skeleton-specific overrides were not backed by a reliable Android latency comparison and did not match the direct route.
+- Keeps once-per-second FPS/inference diagnostics and validates model catalog builds during deployment. These diagnostics do not measure end-to-end motion-to-photon latency; confirm the result on the same device/browser against `/wondersnap/` directly.

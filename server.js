@@ -1,4 +1,4 @@
-// Skeleton v19.3: local inference, validated WonderSnap runtime, and aggregate PostgreSQL telemetry.
+// Skeleton v19.5: local inference, validated WonderSnap runtime, and aggregate PostgreSQL telemetry.
 import express from "express";
 import compression from "compression";
 import fs from "node:fs";
@@ -8,7 +8,7 @@ import { Pool } from "pg";
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
-const VERSION = "19.3.0";
+const VERSION = "19.5.0";
 const app = express();
 app.disable("x-powered-by");
 app.set("trust proxy", 1);
