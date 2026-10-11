@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <meta name="theme-color" content="#05070a">
-<meta name="application-name" content="Skeleton v20.0 Gesture & Meet Lab">
+<meta name="application-name" content="Skeleton v20.1 Gesture & Meet Lab">
 <meta name="color-scheme" content="dark">
-<title>Skeleton v20.0 — Gesture & Meet Lab</title>
+<title>Skeleton v20.1 — Gesture & Meet Lab</title>
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -31,7 +31,7 @@
   <pre id="tele" class="tele"></pre>
 
   <div class="top">
-    <div class="brand glass">HAND <span>·</span> SKELETON v20.0</div>
+    <div class="brand glass">HAND <span>·</span> SKELETON v20.1</div>
     <div class="row-btn">
       <button id="snapBtn" title="Chụp ảnh (S)">📸</button>
       <button id="handBtn" title="Bật/tắt skeleton tay (H)">✋</button>
@@ -46,10 +46,28 @@
     </div>
   </div>
 
+  <button id="gestureGuideBtn" class="gesture-guide-toggle no-fingertip" type="button" aria-expanded="false" aria-controls="gestureGuide">🤚 HƯỚNG DẪN CỬ CHỈ</button>
+  <aside id="gestureGuide" class="gesture-guide glass hidden" aria-label="Hướng dẫn nhận diện cử chỉ" aria-hidden="true">
+    <header><strong>LÀM ĐÚNG CỬ CHỈ</strong><button id="closeGestureGuideBtn" type="button" aria-label="Đóng hướng dẫn">✕</button></header>
+    <p class="gesture-guide-intro">Đưa trọn bàn tay vào khung hình, lòng bàn tay hướng camera, đủ sáng. Giữ tư thế rõ khoảng 0,1 giây để giảm nhận nhầm.</p>
+    <div class="gesture-guide-list">
+      <div><b>🔫 SÚNG → VỠ KÍNH 3 GIÂY</b><span>Duỗi ngón trỏ và ngón cái; gập ngón giữa, áp út, út. Giữ tư thế, rồi đẩy bàn tay nhanh về gần camera (đừng xoay cổ tay). Kéo tay lùi nhẹ để nạp lại.</span></div>
+      <div><b>✌️ CHỮ V → CẦU VỒNG</b><span>Duỗi ngón trỏ + giữa thành chữ V; gập áp út + út. Ngón cái để tự nhiên.</span></div>
+      <div><b>🖐 MỞ BÀN TAY → NĂNG LƯỢNG</b><span>Duỗi cả 4 ngón và ngón cái, tách các ngón ra dễ thấy.</span></div>
+      <div><b>👍 LIKE → TRÁI TIM</b><span>Nắm 4 ngón vào lòng bàn tay, duỗi ngón cái ra rõ ràng.</span></div>
+      <div><b>✊ NẮM ĐẤM → SÓNG XUNG KÍCH</b><span>Gập 4 ngón và ngón cái thành nắm đấm, giữ trong khung.</span></div>
+      <div><b>👌 OK → VÒNG MỤC TIÊU</b><span>Chạm đầu ngón cái vào đầu ngón trỏ tạo vòng tròn; duỗi ngón giữa, áp út và út.</span></div>
+      <div><b>👆 CHỈ TAY / CHỤM NGÓN → BẤM NÚT</b><span>Chỉ ngón trỏ và giữ đầu ngón trên nút khoảng 0,7 giây; hoặc chạm đầu ngón cái + trỏ để bấm nhanh.</span></div>
+      <div><b>💨 VUỐT NHANH → VỆT CHÉM</b><span>Di chuyển tay một đường thẳng nhanh sang trái/phải/lên/xuống; tránh lắc tay tại chỗ.</span></div>
+    </div>
+    <p class="gesture-guide-note">Độ trễ nhận dạng cử chỉ khác độ trễ AI/camera. Chế độ cử chỉ dùng hình học trên 21 điểm khớp; không tải thêm mô hình phân loại để tránh tăng thời gian suy luận.</p>
+  </aside>
+
   <div class="bottom">
     <div class="pills">
       <div class="pill glass">FPS <b id="fps">0</b></div>
       <div class="pill glass">AI <b id="lat">--</b></div>
+      <div class="pill glass">POSE <b id="poseLatency">-- ms</b></div>
       <div class="pill glass">✋ <b id="hands">0</b></div>
       <div class="pill glass">⚡ <b id="gest">—</b></div>
       <div class="pill glass">🎨 <b id="style">XƯƠNG</b></div>
