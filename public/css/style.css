@@ -71,3 +71,14 @@ button.kb-press{background:rgba(0,245,160,.6)!important;transform:scale(.94)!imp
 /* WonderSnap launch link; keeps the existing control row responsive on phones. */
 .nav-link { display:inline-flex; align-items:center; justify-content:center; min-height:36px; padding:0 10px; border:1px solid rgba(102,224,255,.34); border-radius:10px; color:var(--text); text-decoration:none; background:var(--glass); font:inherit; font-size:12px; white-space:nowrap; }
 .nav-link:hover { border-color:var(--accent); background:rgba(102,224,255,.12); }
+
+
+/* v19: embedded WonderSnap experience; keep it isolated from the tracking DOM. */
+.wonder-overlay{position:fixed;inset:0;z-index:1000;background:#05070a;display:flex;flex-direction:column;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+.wonder-overlay.hidden{display:none!important}
+.wonder-toolbar{display:flex;align-items:center;gap:12px;min-height:52px;padding:8px 12px;background:#0b1119;color:#eaf6ff;border-bottom:1px solid #253447;font-size:12px}
+.wonder-toolbar span{flex:1;opacity:.72}
+.wonder-toolbar button{background:#172535;color:#fff;border:1px solid #40556a;border-radius:9px;padding:9px 12px}
+#wonderFrame{display:block;flex:1;width:100%;height:100%;border:0;background:#05070a}
+.wonder-status{position:absolute;bottom:8px;left:12px;right:12px;margin:0;padding:6px 10px;color:#d8e9f6;background:#08111bcc;border-radius:8px;font-size:11px;pointer-events:none}
+@media(max-width:560px){.wonder-toolbar{gap:8px}.wonder-toolbar span{display:none}.wonder-toolbar button{margin-left:auto;font-size:11px}}
