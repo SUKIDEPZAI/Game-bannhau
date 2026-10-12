@@ -1,9 +1,10 @@
 const $ = (id) => document.getElementById(id);
 
 export class MeetingClient {
-  constructor({ onPauseApp = () => {}, onResumeApp = () => {} } = {}) {
+  constructor({ onPauseApp = () => {}, onResumeApp = () => {}, onLocalStream = () => {} } = {}) {
     this.onPauseApp = onPauseApp;
     this.onResumeApp = onResumeApp;
+    this.onLocalStream = onLocalStream;
     this.overlay = $("meetOverlay");
     this.roomId = "";
     this.peerId = "";
@@ -20,6 +21,10 @@ export class MeetingClient {
     this.turnConfigured = false;
     this.connectionGeneration = 0;
     this.lastInviteUrl = "";
+    this.matchStartedAt = 0;
+    this.statsTimer = 0;
+    this.lastStats = null;
+    this.iceRestartAttempts = 0;
     this.bind();
   }
 
@@ -27,6 +32,7 @@ export class MeetingClient {
     $("meetBtn")?.addEventListener("click", () => this.open());
     $("closeMeetBtn")?.addEventListener("click", () => this.close());
     $("createRoomBtn")?.addEventListener("click", () => void this.start("create"));
+    $("randomMatchBtn")?.addEventListener("click", () => void this.start("random"));
     $("joinRoomBtn")?.addEventListener("click", () => void this.start("join"));
     $("hangupBtn")?.addEventListener("click", () => void this.hangup());
     $("copyInviteBtn")?.addEventListener("click", () => void this.copyInvite());
@@ -92,7 +98,8 @@ export class MeetingClient {
     const generation = ++this.connectionGeneration;
     try {
       if (!navigator.mediaDevices?.getUserMedia || !globalThis.RTCPeerConnection) throw new Error("Trình duyệt thiếu WebRTC hoặc camera/microphone. Hãy mở bằng HTTPS trên trình duyệt mới.");
-      this.localStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: { facingMode: { ideal: "user" }, width: { ideal: 1280 }, height: { ideal: 720 } } });
+      this.localStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: { facingMode: { ideal: "user" }, width: { ideal: 960 }, height: { ideal: 540 }, frameRate: { ideal: 30, max: 30 } } });
+      await this.onLocalStream(this.localStream);
       if (generation !== this.connectionGeneration) { this.stopLocalMedia(); return; }
       $("localVideo").srcObject = this.localStream;
       void $("localVideo").play().catch(() => {});
@@ -100,11 +107,16 @@ export class MeetingClient {
       if (mode === "create") {
         const created = await this.api("/api/meet/rooms", { method: "POST", body: JSON.stringify({ peerId: this.peerId }) });
         this.roomId = created.roomId; this.role = "host";
-        if (generation !== this.connectionGeneration) { await this.api(`/api/meet/rooms/${this.roomId}/leave`, { method: "POST", body: JSON.stringify({ peerId: this.peerId }) }).catch(() => {}); return; }
+      } else if (mode === "random") {
+        const result = await this.api("/api/meet/match", { method: "POST", body: JSON.stringify({ peerId: this.peerId }) });
+        this.roomId = result.roomId; this.role = result.role; this.matchStartedAt = Date.now();
       } else {
         const joined = await this.api(`/api/meet/rooms/${requestedRoom}/join`, { method: "POST", body: JSON.stringify({ peerId: this.peerId }) });
         this.roomId = joined.roomId; this.role = joined.role;
-        if (generation !== this.connectionGeneration) { await this.api(`/api/meet/rooms/${this.roomId}/leave`, { method: "POST", body: JSON.stringify({ peerId: this.peerId }) }).catch(() => {}); return; }
+      }
+      if (generation !== this.connectionGeneration) {
+        if (this.roomId && this.peerId) await this.api(`/api/meet/rooms/${this.roomId}/leave`, { method: "POST", body: JSON.stringify({ peerId: this.peerId }) }).catch(() => {});
+        return;
       }
       this.active = true;
       this.lastInviteUrl = this.inviteUrl(this.roomId);
@@ -119,7 +131,8 @@ export class MeetingClient {
       const config = await this.api("/api/meet/config");
       if (generation !== this.connectionGeneration || !this.active) return;
       this.turnConfigured = !!config.turnConfigured;
-      this.setStatus(this.turnConfigured ? "Đang chờ người thứ hai… TURN đã cấu hình." : "Đang chờ người thứ hai… Chưa cấu hình TURN; một số mạng NAT có thể không kết nối được.");
+      this.setStatus(mode === "random" ? "Đang ghép ngẫu nhiên… Skeleton vẫn nhận diện tay trong cuộc gọi. Bạn có thể hủy bất cứ lúc nào." : (this.turnConfigured ? "Đang chờ người thứ hai… TURN đã cấu hình." : "Đang chờ người thứ hai… Chưa cấu hình TURN; một số mạng NAT có thể không kết nối được."));
+      $("hangupBtn").textContent = mode === "random" ? "✕ Hủy ghép / kết thúc" : "☎ Kết thúc cuộc gọi";
       await this.createPeerConnection(config.iceServers);
       if (generation === this.connectionGeneration && this.active) this.schedulePoll(0);
     } catch (error) {
@@ -156,15 +169,24 @@ export class MeetingClient {
         void this.sendSignal("ice", event.candidate.toJSON()).catch(error => this.setStatus(`Tín hiệu ICE lỗi: ${error.message}`, "error"));
       }
     };
+    for (const sender of pc.getSenders()) {
+      if (sender.track?.kind === "video") {
+        try { const params = sender.getParameters(); params.degradationPreference = "maintain-framerate"; params.encodings = params.encodings?.length ? params.encodings : [{}]; params.encodings[0].maxBitrate = 1_500_000; void sender.setParameters(params).catch(() => {}); } catch {}
+      }
+    }
     pc.onconnectionstatechange = () => {
       if (pc !== this.pc) return;
       const state = pc.connectionState;
-      if (state === "connected") this.setStatus("Đã kết nối trực tiếp. Âm thanh/video đang truyền ngang hàng.", "success");
+      if (state === "connected") { this.setStatus("Đã kết nối trực tiếp. Âm thanh/video và cử chỉ Skeleton đang chạy song song.", "success"); $("hangupBtn").textContent = "☎ Kết thúc cuộc gọi"; this.startNetworkStats(); }
       else if (state === "failed") this.setStatus("Kết nối thất bại. Hãy thử bật TURN trên máy chủ hoặc đổi mạng.", "error");
       else if (state === "disconnected") this.setStatus("Kết nối gián đoạn; đang chờ WebRTC tự khôi phục…", "warn");
     };
     pc.oniceconnectionstatechange = () => {
-      if (pc === this.pc && pc.iceConnectionState === "failed") this.setStatus("ICE không tìm được đường truyền. Cần cấu hình TURN để tăng khả năng kết nối.", "error");
+      if (pc !== this.pc) return;
+      if (pc.iceConnectionState === "failed") {
+        this.setStatus("Đường ICE lỗi; đang thử khôi phục. Nếu tiếp tục lỗi, hãy cấu hình TURN hoặc đổi mạng.", "warn");
+        void this.recoverIce(pc);
+      } else if (pc.iceConnectionState === "connected" || pc.iceConnectionState === "completed") this.iceRestartAttempts = 0;
     };
   }
 
@@ -180,14 +202,18 @@ export class MeetingClient {
   }
 
   async poll() {
-    if (!this.active || this.pollBusy) return this.schedulePoll(900);
+    if (!this.active || this.pollBusy) return this.schedulePoll(300);
     this.pollBusy = true;
     try {
       const state = await this.api(`/api/meet/rooms/${this.roomId}/state?peerId=${encodeURIComponent(this.peerId)}`);
       const others = state.peers.filter(p => p.peerId !== this.peerId);
       const otherId = others[0]?.peerId || "";
+      if (this.matchStartedAt && !otherId && Date.now() - this.matchStartedAt > 120_000) {
+        this.setStatus("Hết 120 giây mà chưa ghép được người phù hợp. Bạn có thể thử ghép lại.", "warn");
+        await this.hangup(); return;
+      }
       if (otherId && otherId !== this.remotePeerId) {
-        this.remotePeerId = otherId;
+        this.remotePeerId = otherId; this.matchStartedAt = 0;
         this.pendingIce = [];
         this.setStatus("Người tham gia đã vào phòng. Đang thiết lập kết nối…");
         if (state.role === "host" && this.pc && !this.pc.localDescription && !this.makingOffer) await this.makeOffer();
@@ -196,7 +222,7 @@ export class MeetingClient {
         this.resetRemotePeer();
         this.setStatus("Người còn lại đã rời phòng. Đang chờ người tham gia mới…");
       } else if (!otherId) {
-        this.setStatus("Đang chờ người thứ hai… Hãy gửi đường dẫn mời.");
+        this.setStatus(this.matchStartedAt ? "Đang ghép ngẫu nhiên… Skeleton và cử chỉ vẫn hoạt động." : "Đang chờ người thứ hai… Hãy gửi đường dẫn mời.");
       }
       for (const message of state.messages || []) await this.handleSignal(message);
       this.refreshMediaButtons();
@@ -204,15 +230,67 @@ export class MeetingClient {
       if (this.active) this.setStatus(`Mất tín hiệu phòng: ${error.message}. Đang thử kết nối lại…`, "warn");
     } finally {
       this.pollBusy = false;
-      this.schedulePoll(this.active ? 900 : 0);
+      this.schedulePoll(this.active ? (this.pc?.connectionState === "connected" ? 650 : 250) : 0);
     }
   }
 
-  async makeOffer() {
+  startNetworkStats() {
+    clearInterval(this.statsTimer);
+    this.statsTimer = setInterval(() => void this.updateNetworkStats(), 2000);
+    void this.updateNetworkStats();
+  }
+
+  async updateNetworkStats() {
+    if (!this.pc || this.pc.connectionState !== "connected") return;
+    try {
+      const report = await this.pc.getStats();
+      let rtt = null, jitter = null, lost = 0, received = 0, framesDropped = 0, bytes = 0, candidateType = "?";
+      for (const stat of report.values()) {
+        if (stat.type === "candidate-pair" && stat.state === "succeeded" && (stat.nominated || stat.selected)) {
+          if (Number.isFinite(stat.currentRoundTripTime)) rtt = stat.currentRoundTripTime * 1000;
+          const local = report.get(stat.localCandidateId); if (local?.candidateType) candidateType = local.candidateType;
+        }
+        if (stat.type === "inbound-rtp" && stat.kind === "audio") { if (Number.isFinite(stat.jitter)) jitter = stat.jitter * 1000; lost += stat.packetsLost || 0; received += stat.packetsReceived || 0; }
+        if (stat.type === "inbound-rtp" && stat.kind === "video") { bytes += stat.bytesReceived || 0; framesDropped += stat.framesDropped || 0; }
+      }
+      const now = performance.now();
+      const bitrate = this.lastStats && now > this.lastStats.at ? Math.max(0, (bytes - this.lastStats.bytes) * 8 / ((now - this.lastStats.at) / 1000) / 1000) : 0;
+      this.lastStats = { at: now, bytes };
+      const loss = received + lost > 0 ? (100 * lost / (received + lost)).toFixed(1) : "—";
+      const line = `MẠNG · RTT ${rtt == null ? "—" : `${Math.round(rtt)} ms`} · jitter ${jitter == null ? "—" : `${jitter.toFixed(1)} ms`} · mất gói ${loss}% · video ${bitrate.toFixed(0)} kb/s · ICE ${candidateType}`;
+      const el = $("meetNetworkStats"); if (el) el.textContent = line;
+      const lossRate = received + lost > 0 ? lost / (received + lost) : 0;
+      const targetBitrate = lossRate > 0.05 || (rtt != null && rtt > 300) ? 650_000 : 1_500_000;
+      for (const sender of this.pc?.getSenders?.() || []) {
+        if (sender.track?.kind !== "video") continue;
+        try {
+          const params = sender.getParameters(); params.encodings = params.encodings?.length ? params.encodings : [{}];
+          if (params.encodings[0].maxBitrate !== targetBitrate) { params.encodings[0].maxBitrate = targetBitrate; void sender.setParameters(params).catch(() => {}); }
+        } catch {}
+      }
+    } catch (error) { console.debug("WebRTC stats unavailable", error); }
+  }
+
+  async recoverIce(pc) {
+    if (!this.active || pc !== this.pc || this.iceRestartAttempts >= 2) {
+      if (this.iceRestartAttempts >= 2) this.setStatus("Tự khôi phục đã thử 2 lần. Hãy kết thúc và gọi lại hoặc đổi mạng.", "error");
+      return;
+    }
+    this.iceRestartAttempts++;
+    try {
+      pc.restartIce?.();
+      if (this.role === "host") await this.makeOffer({ iceRestart: true });
+      setTimeout(() => {
+        if (this.active && this.pc === pc && pc.iceConnectionState === "failed" && this.iceRestartAttempts < 2) void this.recoverIce(pc);
+      }, 2500);
+    } catch (error) { this.setStatus(`Không khôi phục được ICE: ${error.message}`, "error"); }
+  }
+
+  async makeOffer({ iceRestart = false } = {}) {
     if (!this.pc || !this.remotePeerId || this.makingOffer) return;
     this.makingOffer = true;
     try {
-      const offer = await this.pc.createOffer();
+      const offer = await this.pc.createOffer(iceRestart ? { iceRestart: true } : undefined);
       await this.pc.setLocalDescription(offer);
       await this.sendSignal("offer", { type: this.pc.localDescription.type, sdp: this.pc.localDescription.sdp });
       this.setStatus("Đã gửi lời mời WebRTC. Đang đàm phán đường truyền…");
@@ -278,6 +356,7 @@ export class MeetingClient {
   }
 
   closePeerConnection() {
+    clearInterval(this.statsTimer); this.statsTimer = 0; this.lastStats = null;
     if (this.pc) {
       this.pc.ontrack = this.pc.onicecandidate = this.pc.onconnectionstatechange = this.pc.oniceconnectionstatechange = null;
       try { this.pc.close(); } catch {}
@@ -287,6 +366,7 @@ export class MeetingClient {
 
   stopLocalMedia() {
     this.localStream?.getTracks().forEach(track => track.stop());
+    try { const result = this.onLocalStream(null); result?.catch?.(() => {}); } catch {}
     this.localStream = null;
     if ($("localVideo")) $("localVideo").srcObject = null;
     if ($("remoteVideo")) $("remoteVideo").srcObject = null;
@@ -329,12 +409,14 @@ export class MeetingClient {
     if (roomId && peerId) await this.api(`/api/meet/rooms/${roomId}/leave`, { method: "POST", body: JSON.stringify({ peerId }) }).catch(() => {});
     this.closePeerConnection(); this.stopLocalMedia();
     this.roomId = this.peerId = this.remotePeerId = this.role = "";
-    this.pendingIce = []; this.lastInviteUrl = ""; this.turnConfigured = false;
+    this.pendingIce = []; this.lastInviteUrl = ""; this.turnConfigured = false; this.matchStartedAt = 0;
     $("meetInviteRow").classList.add("hidden");
     $("meetLobby").classList.remove("hidden");
     $("meetCallControls").classList.add("hidden");
     $("meetVideoGrid").classList.add("hidden");
     $("hangupBtn").classList.add("hidden");
+    $("hangupBtn").textContent = "☎ Kết thúc cuộc gọi";
+    const stats = $("meetNetworkStats"); if (stats) stats.textContent = "MẠNG · Chưa kết nối";
     this.setStatus("Đã kết thúc cuộc gọi.");
   }
 

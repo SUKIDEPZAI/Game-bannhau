@@ -19,7 +19,7 @@ const slots = [0, 1].map(() => ({ set: new SmoothSet(21, { ...FILTER.hand, ...co
 const M = Object.fromEntries(["ai", "age", "render", "xfer", "cap", "xout", "wq", "back", "gest", "pose"].map((k) => [k, new Metric()]));
 const rec = new Recorder(), perf = new PerfController(PERF), agents = new AIAgentSuite(), domainAgents = new AgentOrchestrator(), abBench = new ABBenchmark(), abWait = new InterruptibleWait(); let perfT = 0, lastSubmitPf = -1, fm = { now: 0, cap: 0, pf: 0, n: 0 };
 let ai = null, activeModel = "mediapipe", modelPromise = null, startPromise = null, aiRecovery = false, abPromise = null, backendStatus = "UNKNOWN", databaseStatus = "unknown", jobsStatus = "ok", panelOpen = false, lastAgentUi = 0, pname = DEFAULT_PROFILE, P = PROFILES[pname], stream = null, running = false, facing = "user", lastRaf = 0, camLag = 25;
-let cameraGeneration = 0, cameraNeedsRetry = false, rafId = 0, frameCbId = null, frameCbKind = "", fallbackFrameNo = 0, lastFallbackVideoTime = -1, lastMetricsPostAt = 0, metricsPostBusy = false;
+let cameraGeneration = 0, cameraNeedsRetry = false, rafId = 0, frameCbId = null, frameCbKind = "", fallbackFrameNo = 0, lastFallbackVideoTime = -1, lastMetricsPostAt = 0, metricsPostBusy = false, streamOwnedByApp = true;
 const show = { hands: true };
 const ix = new Interact(canvas, INTERACT, () => document.querySelectorAll(INTERACT.selector));
 const effects = new EffectLayer($("gestureEffects"));
@@ -36,7 +36,8 @@ const meeting = new MeetingClient({
     // Always invalidate a pending getUserMedia/startup request before WebRTC opens its own camera.
     stopCamera();
   },
-  onResumeApp: () => { const resume = resumeAfterMeeting; resumeAfterMeeting = false; if (resume) void requestStart(); }
+  onResumeApp: () => { const resume = resumeAfterMeeting; resumeAfterMeeting = false; if (resume) void requestStart(); },
+  onLocalStream: (localStream) => localStream ? attachMeetingStream(localStream) : stopMeetingTracking()
 });
 globalThis.__skel = { slots, fm, ix, agents: domainAgents, abBench };
 Object.defineProperty(globalThis.__skel, "running", { get: () => running }); // phục vụ test/E2E & gỡ lỗi trong Console
@@ -185,6 +186,7 @@ function scheduleFrame(token) {
   });
 }
 async function startCamera() {
+  if (meeting.opened) return; // meeting owns the shared camera stream while its overlay is active
   // Camera flip/profile restart invalidates A/B samples from the previous capture stream.
   if (abBench.active) stopABBenchmark();
   const token = ++cameraGeneration;
@@ -192,13 +194,14 @@ async function startCamera() {
   running = false;
   cancelPumps();
   const oldStream = stream; stream = null;
-  oldStream?.getTracks().forEach((t) => t.stop());
+  if (streamOwnedByApp) oldStream?.getTracks().forEach((t) => t.stop());
+  streamOwnedByApp = true;
   resetTracking(); rend.clear(); resetTelemetry();
   try {
     const [w, h, fps] = P.cam;
     const nextStream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: facing }, width: { ideal: w }, height: { ideal: h }, frameRate: { ideal: fps, max: fps } } });
     if (token !== cameraGeneration) { nextStream.getTracks().forEach((t) => t.stop()); return; }
-    stream = nextStream;
+    stream = nextStream; streamOwnedByApp = true;
     video.srcObject = nextStream; await video.play();
     if (token !== cameraGeneration) { nextStream.getTracks().forEach((t) => t.stop()); if (stream === nextStream) stream = null; return; }
     const settings = nextStream.getVideoTracks()[0]?.getSettings?.() || {};
@@ -221,10 +224,45 @@ async function startCamera() {
     showError("Không mở được camera." + (globalThis.isSecureContext ? " Hãy kiểm tra quyền camera." : " Cần HTTPS hoặc localhost."));
   }
 }
+async function attachMeetingStream(externalStream) {
+  // Reuse the call's camera track for local hand tracking: never request a second camera.
+  stopCamera();
+  const token = ++cameraGeneration;
+  stream = externalStream; streamOwnedByApp = false;
+  // Lift the transparent skeleton canvas above the call UI so hand landmarks stay visible during the call.
+  document.body.appendChild(canvas);
+  Object.assign(canvas.style, { position: "fixed", inset: "auto 2% 14% auto", width: "min(42vw, 360px)", height: "26vh", zIndex: "1400", border: "1px solid rgba(115,225,255,.42)", borderRadius: "14px", background: "rgba(3,8,14,.08)", transform: "scaleX(-1)", pointerEvents: "none" });
+  try {
+    video.srcObject = externalStream;
+    await video.play();
+    if (token !== cameraGeneration || !externalStream.active) return;
+    const settings = externalStream.getVideoTracks()[0]?.getSettings?.() || {};
+    T.res = `CALL ${settings.width || video.videoWidth}x${settings.height || video.videoHeight}@${Math.round(settings.frameRate || 0)}`;
+    rend.mirrored = true; stage.classList.add("mirror");
+    resetTracking(); lastSubmitPf = -1; fm.n = 0; fallbackFrameNo = 0; lastFallbackVideoTime = -1;
+    perfT = performance.now() + PERF.warmupMs;
+    $("welcome").classList.add("hidden"); setBtn(true); noDet = 0;
+    running = true; lastRaf = performance.now();
+    rafId = requestAnimationFrame((t) => loop(t, token)); scheduleFrame(token);
+  } catch (error) {
+    if (token === cameraGeneration) showError("Không thể dùng camera cuộc gọi cho nhận diện tay: " + (error.message || error));
+  }
+}
+function stopMeetingTracking() {
+  // Stop only inference/render loops. MeetingClient owns and stops the media tracks.
+  stopABBenchmark(); ++cameraGeneration; running = false; cameraNeedsRetry = false; cancelPumps();
+  stream = null; streamOwnedByApp = true;
+  try { video.pause(); } catch {}
+  video.srcObject = null;
+  if (canvas.parentElement !== stage) stage.appendChild(canvas);
+  canvas.removeAttribute("style"); canvas.style.position = "absolute"; canvas.style.inset = "0"; canvas.style.width = "100%"; canvas.style.height = "100%"; canvas.style.pointerEvents = "none";
+  stage.classList.remove("mirror"); resetTracking(); rend.clear(); setBtn(false); $("welcome").classList.remove("hidden");
+}
+
 function stopCamera() {
   stopABBenchmark();
   ++cameraGeneration; running = false; cameraNeedsRetry = false; cancelPumps();
-  stream?.getTracks().forEach((t) => t.stop()); stream = null;
+  if (streamOwnedByApp) stream?.getTracks().forEach((t) => t.stop()); stream = null; streamOwnedByApp = true;
   try { video.pause(); } catch {}
   video.srcObject = null; resetTracking(); rend.clear(); setBtn(false); $("welcome").classList.remove("hidden");
 }
