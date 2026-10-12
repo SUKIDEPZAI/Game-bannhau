@@ -1,4 +1,4 @@
-// Skeleton v20.4: low-latency hand tracking, in-call gesture reuse, random matchmaking and WebRTC network diagnostics.
+// Skeleton v20.5: low-latency hand tracking, in-call gesture reuse, random matchmaking and WebRTC network diagnostics.
 import express from "express";
 import compression from "compression";
 import fs from "node:fs";
@@ -10,7 +10,7 @@ import { MeetingHub } from "./lib/meeting-hub.js";
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
-const VERSION = "20.4.0";
+const VERSION = "20.5.0";
 const app = express();
 app.disable("x-powered-by");
 app.set("trust proxy", 1);

@@ -1,4 +1,4 @@
-# Skeleton v20.4 — WonderSnap hologram, cử chỉ nâng cao và tiếng Việt
+# Skeleton v20.5 — tối ưu độ trễ ưu tiên
 
 Focus: realtime hand tracking on Android, frame freshness, smooth rendering, model A/B benchmarks, and non-blocking Render/PostgreSQL maintenance tasks.
 
@@ -149,6 +149,13 @@ The WONDER control opens the WonderSnap experience in an embedded full-screen ov
 - No system can be truthfully certified “5/5” from source review alone. Run the test suite and real Android/browser/network checks before production release.
 
 
+## v20.5 — TURBO low-latency profile
+
+- Thêm profile TURBO mặc định: camera mục tiêu 480×270/60 fps, tắt hiệu ứng vẽ tốn GPU và giữ skeleton/nhận diện cử chỉ.
+- Giảm ảnh đầu vào suy luận từ 480×270 xuống 384×216 để giảm thời gian tạo bitmap/chuyển dữ liệu; độ chính xác có thể giảm khi bàn tay ở xa.
+- Giảm ngưỡng loại kết quả quá cũ từ 250 ms xuống 100 ms; khung chậm bị bỏ thay vì làm tay bám theo quá khứ.
+- Đây là tối ưu theo độ trễ, không bảo đảm 1–10 ms đầu-cuối; camera, inference, vsync và phần cứng vẫn chi phối.
+
 ## v20.4 — WonderSnap cử chỉ nâng cao, HUD viễn tưởng và tiếng Việt
 
 - **Xoay/thu phóng bằng hai tay:** khoảng cách giữa hai bàn tay điều chỉnh tỷ lệ mô hình từ 0,35× đến 3,2×; xoay đường nối giữa hai lòng bàn tay để xoay mô hình và nâng/hạ cả hai tay để nghiêng góc nhìn.
@@ -185,3 +192,9 @@ Nguồn upstream được tải khi Render build do model bàn tay khoảng 7,8 
 - Network diagnostics display selected ICE candidate type, estimated RTT, audio jitter/loss and received video bitrate. Video sender is capped around 1.5 Mbps and prefers maintaining frame rate.
 - Random match requires one server process because the ephemeral queue is in memory. For multiple Render instances, move matchmaking and signaling to Redis/WebSocket or a shared service. TURN remains recommended for restrictive NAT/mobile carrier networks.
 - Full camera-to-screen 1–10 ms is not a realistic universal guarantee. The project reports the geometry decision time separately from inference, frame age, render and WebRTC network statistics.
+
+## v20.5 — TURBO ưu tiên độ trễ
+
+Bản này đặt `TURBO` làm profile mặc định: camera mục tiêu 480×270/60 FPS, ảnh suy luận 384×216, tắt hiệu ứng vẽ phụ và bỏ kết quả có tuổi trên 100 ms. Chuyển profile bằng phím `P`. Đây là cấu hình đánh đổi một phần chất lượng nhận diện lấy phản hồi nhanh hơn; nếu tay nhỏ/xa hoặc thiếu sáng, chuyển sang ULTRA/BALANCED.
+
+Kết quả kiểm tra cục bộ: 80/80 test, 9/9 E2E mô phỏng. Benchmark bộ phân loại không phải benchmark motion-to-photon. Đọc `docs/V20_5_LOW_LATENCY.md` để đo trên Android/desktop và các giới hạn vật lý.
