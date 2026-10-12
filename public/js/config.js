@@ -6,6 +6,7 @@ export const RENDER_URL = MANUAL || (loc && (host.endsWith("onrender.com") || ho
 
 // 2) Profile (v14: KHÔNG còn skeleton đầu → faceFps luôn 0; style 0 = XƯƠNG mới): cam [rộng, cao, fps] · faceFps = tần số face (0 = tắt) · fx = hiệu ứng vẽ · predict = "video" (bám khung đang hiển thị) | "world"
 export const PROFILES = {
+  TURBO:    { cam: [480, 270, 60],  faceFps: 0,  style: 2, fx: { glow: false, trail: false, text: false, lasers: false }, predict: "video" },
   ULTRA:    { cam: [640, 360, 60],  faceFps: 0,  style: 2, fx: { glow: false, trail: false, text: false, lasers: false }, predict: "video" },
   BALANCED: { cam: [960, 540, 60],  faceFps: 0,  style: 0, fx: { glow: true,  trail: false, text: true,  lasers: false }, predict: "video" },
   QUALITY:  { cam: [1280, 720, 30], faceFps: 0,  style: 0, fx: { glow: true,  trail: true,  text: true,  lasers: true  }, predict: "video" }
@@ -13,10 +14,10 @@ export const PROFILES = {
 
 // 3) Bộ lọc/dự đoán (đơn vị: toạ độ chuẩn hoá 0..1, giây). Nguồn: One Euro (Casiez 2012) + benchmark test/bench.js
 // Default to latency-first mode: do not start at 960x540 when the stated goal is sub-100ms responsiveness.
-export const DEFAULT_PROFILE = "ULTRA";
+export const DEFAULT_PROFILE = "TURBO";
 // Run inference on a smaller bitmap while keeping the camera/display resolution independent.
 // Normalized landmarks remain compatible with the full-resolution preview.
-export const INFERENCE_FRAME = { width: 480, height: 270, resizeQuality: "low" };
+export const INFERENCE_FRAME = { width: 384, height: 216, resizeQuality: "low" };
 
 export const FILTER = {
   hand: { minCutoff: 1.6, beta: 40, dCutoff: 9, tau: 0.006 },   // chọn bằng test/sweep.js (Pareto): trội hơn 2.2/60/6 ở cả jitter lẫn lag. minCutoff↓ = êm hơn khi đứng yên; beta↑ = bớt trễ khi nhanh
@@ -47,7 +48,7 @@ export const GESTURE = {
 };
 
 // 6) Lập lịch khung + telemetry + bộ điều khiển hiệu năng
-export const SCHED = { staleMs: 250, useCaptureTime: true };     // bỏ kết quả có THỜI GIAN CHỜ (không tính thời gian AI) > staleMs; dùng captureTime của rVFC cho dt nếu có
+export const SCHED = { staleMs: 100, useCaptureTime: true };     // bỏ kết quả có THỜI GIAN CHỜ (không tính thời gian AI) > staleMs; dùng captureTime của rVFC cho dt nếu có
 export const PERF = { evalMs: 500, degradeAfterMs: 1500, recoverAfterMs: 6000, cooldownMs: 4000, aiP95Budget: 22, ageP95Budget: 100, warmupMs: 3000, renderP95Budget: 6 };
 
 // 7) Tương tác đầu ngón tay ↔ nút trên màn hình (xem interact.js)

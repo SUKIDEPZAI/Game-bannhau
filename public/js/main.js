@@ -425,7 +425,7 @@ function hud(now, hands) {
   setText("gest", slots.filter((s) => s.set.alpha > .5).map((s) => s.label + (now - s.swipeT < 700 ? " ↯" + ({ L: "←", R: "→", U: "↑", D: "↓" }[s.swipe] || "") : "")).join(" · ") || "—");
   setText("lead", "~" + Math.round(T.age) + "ms");
   $("tele").textContent =
-`PROFILE ${pname}${perf.level ? " ↓" + perf.level : ""} · ${activeModel.toUpperCase()} / ${ai?.kind || "-"} · ${T.res}      [ms]  P50/P95/P99/MAX
+`PROFILE ${pname}${perf.level ? " ↓" + perf.level : ""} · stale≤${SCHED.staleMs}ms · ${activeModel.toUpperCase()} / ${ai?.kind || "-"} · ${T.res}      [ms]  P50/P95/P99/MAX
 CAM      ${f(T.cam)}  [đo] tuổi khung lúc callback${T.cam ? "" : " (không có captureTime)"}
 CAPTURE  ${f(M.cap.stats().p50)}  ${fmtP(M.cap)}  [đo] createImageBitmap
 XFER→W   ${f(M.xout.stats().p50)}  ${fmtP(M.xout)}  [đo] main→worker
@@ -446,7 +446,7 @@ async function setProfile(n) {
   pname = n; P = PROFILES[n]; perf.applyFx(rend.fx, P.fx); rend.style = P.style; setText("style", STYLES[rend.style]); setText("prof", n);
   if (running) await startCamera();
 }
-const cycleProfile = () => setProfile(Object.keys(PROFILES)[(Object.keys(PROFILES).indexOf(pname) + 1) % 3]);
+const cycleProfile = () => setProfile(Object.keys(PROFILES)[(Object.keys(PROFILES).indexOf(pname) + 1) % Object.keys(PROFILES).length]);
 const cycleStyle = () => { rend.style = (rend.style + 1) % STYLES.length; setText("style", STYLES[rend.style]); };
 const toggle = (k, btn) => { show[k] = !show[k]; btn.classList.toggle("off", !show[k]); };
 const full = () => document.fullscreenElement ? document.exitFullscreen?.() : document.documentElement.requestFullscreen?.().catch(() => {});
