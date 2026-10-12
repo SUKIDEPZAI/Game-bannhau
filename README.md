@@ -1,4 +1,4 @@
-# Skeleton v20.1 — Gesture Clarity & Low-Latency Lab
+# Skeleton v20.4 — WonderSnap hologram, cử chỉ nâng cao và tiếng Việt
 
 Focus: realtime hand tracking on Android, frame freshness, smooth rendering, model A/B benchmarks, and non-blocking Render/PostgreSQL maintenance tasks.
 
@@ -147,3 +147,41 @@ The WONDER control opens the WonderSnap experience in an embedded full-screen ov
 - WebRTC uses a public STUN server for peer discovery. Some NATs/firewalls require a TURN server; configure one for dependable calls across restrictive networks. The REST signaling service does not forward media.
 - Camera/microphone calls require HTTPS (Render provides HTTPS). Browser permissions must be granted by each participant. Room codes are ephemeral and are not user authentication; do not use this as a private/regulated meeting system without adding authentication, abuse controls and TURN credentials management.
 - No system can be truthfully certified “5/5” from source review alone. Run the test suite and real Android/browser/network checks before production release.
+
+
+## v20.4 — WonderSnap cử chỉ nâng cao, HUD viễn tưởng và tiếng Việt
+
+- **Xoay/thu phóng bằng hai tay:** khoảng cách giữa hai bàn tay điều chỉnh tỷ lệ mô hình từ 0,35× đến 3,2×; xoay đường nối giữa hai lòng bàn tay để xoay mô hình và nâng/hạ cả hai tay để nghiêng góc nhìn.
+- **Gắp linh kiện trực tiếp:** chụm ngón cái + ngón trỏ gần một điểm linh kiện để chọn và tách; trong lúc giữ chụm, rê tay để kéo linh kiện theo hướng tay; thả tay để giữ vị trí, chụm lại để lắp về.
+- **Xoay cổ tay nhạy hơn:** tăng độ phản hồi có giới hạn, vẫn giữ làm mượt và không chạy thêm mạng phân loại.
+- **Xung lực lòng bàn tay:** xòe bàn tay và vuốt/đẩy nhanh để kích hoạt một xung lực hạt sáng cùng vòng HUD năng lượng. **Khiên hologram:** giơ ngón cái ở cả hai tay và giữ khoảng 0,55 giây để bật các vòng bảo vệ quanh mô hình. Đây là các hành động hình học chạy cục bộ, không phải nhận diện ý định bằng AI.
+- **Thiết kế bàn tay hologram:** lưới tam giác lòng bàn tay, vòng định vị quanh khớp, cổ tay phát sáng và tâm ngắm phân đoạn thay cho dấu chấm phẳng. Ba hình concept nằm trong `docs/designs/`.
+- **Việt hóa WonderSnap:** giao diện, hướng dẫn cử chỉ, trạng thái, tên danh mục/mô hình phổ biến, tên bộ phận, phần lớn mô tả phổ biến, lệnh giọng nói và trạng thái tư thế ngón cái; giọng đọc yêu cầu `vi-VN` trong trình duyệt hỗ trợ.
+- Giữ nguyên commit WonderSnap đã ghim `cf2dcb1f27313175f9b7482bf427f76240452c23`, camera upstream 1280×720@30 và các mặc định hạt/DPR để tránh giảm chất lượng không có số đo thiết bị thật.
+
+### Ảnh concept
+
+- `docs/designs/design-01-ban-tay-hologram.png` — lưới tay hologram và mạch năng lượng.
+- `docs/designs/design-02-chon-tach-linh-kien.png` — vòng khóa mục tiêu, tách từng bộ phận.
+- `docs/designs/design-03-gauntlet-vi-dieu-khien.png` — giao diện điều khiển không gian và vòng năng lượng.
+
+### Giới hạn xác minh
+
+Các test cục bộ xác nhận code patch được áp dụng lên fixture và vẫn hợp cú pháp. Mã WonderSnap thật cùng model bàn tay được tải lúc build Render; ZIP này không nhúng bản upstream 7,8 MB. Cần build có mạng và thử camera/đồ họa trên Android thật để xác nhận luồng tương tác và độ trễ đầu-cuối. Không có cam kết 1–10 ms cho toàn đường camera → nhận diện → vẽ.
+
+## v20.3 — Đồng bộ nguồn WonderSnap và triển khai có thể tái lập
+
+- Ghim mã WonderSnap theo commit `cf2dcb1f27313175f9b7482bf427f76240452c23` thay vì theo dõi nhánh `main` trôi nổi. Có thể đặt `WONDERSNAP_COMMIT` bằng SHA đủ 40 ký tự.
+- Xác minh SHA trước khi đóng gói; kiểm tra tính năng Standard / More forgiving và buffer của các mô hình procedural.
+- Dùng `npm ci` trong thư mục phụ thuộc riêng để không trộn MediaPipe của WonderSnap với Skeleton.
+
+Nguồn upstream được tải khi Render build do model bàn tay khoảng 7,8 MB không được nhân đôi trong ZIP. Xem `docs/V20_3_WONDERSNAP_SYNC.md`.
+
+## v20.2 — Random matching, in-call gestures and network telemetry
+
+- The meeting lobby now supports an explicit random-match button. Matchmaking is ephemeral, one-to-one, and expires after 120 seconds; cancel/hang up removes the waiting entry. Do not enable random video matching without a clear user consent prompt.
+- The active call's local camera stream is reused by Skeleton's existing inference pipeline, avoiding a second camera capture. Gesture effects render above the meeting overlay; hangup stops the shared stream and closing the meeting can restore the normal Skeleton camera.
+- WebRTC polling is faster during connection setup, with a bounded server rate limit. Media is still peer-to-peer; signaling poll speed does not equal audio/video latency.
+- Network diagnostics display selected ICE candidate type, estimated RTT, audio jitter/loss and received video bitrate. Video sender is capped around 1.5 Mbps and prefers maintaining frame rate.
+- Random match requires one server process because the ephemeral queue is in memory. For multiple Render instances, move matchmaking and signaling to Redis/WebSocket or a shared service. TURN remains recommended for restrictive NAT/mobile carrier networks.
+- Full camera-to-screen 1–10 ms is not a realistic universal guarantee. The project reports the geometry decision time separately from inference, frame age, render and WebRTC network statistics.

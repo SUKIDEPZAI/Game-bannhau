@@ -1,4 +1,4 @@
-// Skeleton v20.1: angle-based gesture recognition, action guide, low-latency diagnostics, WebRTC meeting signaling, and aggregate telemetry.
+// Skeleton v20.4: low-latency hand tracking, in-call gesture reuse, random matchmaking and WebRTC network diagnostics.
 import express from "express";
 import compression from "compression";
 import fs from "node:fs";
@@ -10,7 +10,7 @@ import { MeetingHub } from "./lib/meeting-hub.js";
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
-const VERSION = "20.1.0";
+const VERSION = "20.4.0";
 const app = express();
 app.disable("x-powered-by");
 app.set("trust proxy", 1);
@@ -47,7 +47,7 @@ app.get("/healthz", async (_q, res) => {
   const ok = db !== "error" && db !== "starting";
   res.set("Cache-Control", "no-store").status(ok ? 200 : 503).json({ ok, database: db, version: VERSION });
 });
-app.get("/version.json", (_q, res) => res.set("Cache-Control", "no-store").json({ version: VERSION, build: process.env.RENDER_GIT_COMMIT || "local", updatedAt: "2026-10-11" }));
+app.get("/version.json", (_q, res) => res.set("Cache-Control", "no-store").json({ version: VERSION, build: process.env.RENDER_GIT_COMMIT || "local", updatedAt: "2026-10-12" }));
 
 app.use("/vendor", express.static(path.join(dir, "node_modules/@mediapipe/tasks-vision"), { maxAge: "365d", immutable: true, setHeaders: (res, p) => { if (p.endsWith(".cjs")) res.type("application/javascript"); } }));
 // WonderSnap is an isolated, upstream-vendored 3D particle experience. Its local model and JS assets are served separately from Skeleton APIs.
@@ -135,6 +135,13 @@ app.get("/api/meet/config", limitMeet("meet-config", 120), (_q, res) => {
   }
   res.set("Cache-Control", "no-store").json({ iceServers, turnConfigured: iceServers.length > 2, credentialTtlSec: iceServers.length > 2 ? Math.max(300, Math.min(86400, Number(process.env.TURN_CREDENTIAL_TTL_SEC) || 3600)) : 0 });
 });
+app.post("/api/meet/match", limitMeet("meet-match", 10), (req, res) => {
+  if (!isPeerId(req.body?.peerId)) return res.status(400).json({ error: "valid peerId required" });
+  hubResponse(res, meetingHub.matchmake(req.body.peerId));
+});
+app.post("/api/meet/match/cancel", limitMeet("meet-match-cancel", 20), (req, res) => {
+  hubResponse(res, meetingHub.cancelMatchmaking(req.body?.peerId));
+});
 app.post("/api/meet/rooms", limitMeet("meet-create", 10), (req, res) => {
   if (!isPeerId(req.body?.peerId)) return res.status(400).json({ error: "valid peerId required" });
   hubResponse(res, meetingHub.create(req.body.peerId));
@@ -143,7 +150,7 @@ app.post("/api/meet/rooms/:roomId/join", limitMeet("meet-join", 20), (req, res) 
   if (!isPeerId(req.body?.peerId)) return res.status(400).json({ error: "valid peerId required" });
   hubResponse(res, meetingHub.join(req.params.roomId, req.body.peerId));
 });
-app.get("/api/meet/rooms/:roomId/state", limitMeet("meet-state", 150), (req, res) => {
+app.get("/api/meet/rooms/:roomId/state", limitMeet("meet-state", 360), (req, res) => {
   hubResponse(res, meetingHub.state(req.params.roomId, req.query.peerId));
 });
 app.post("/api/meet/rooms/:roomId/signal", limitMeet("meet-signal", 150), (req, res) => {
@@ -157,7 +164,7 @@ app.post("/api/meet/rooms/:roomId/leave", limitMeet("meet-leave", 30), (req, res
 app.get("/api/status", async (_q, res) => {
   let database = !pool ? "disabled" : dbReady ? "ready" : "starting", queuedJobs = null, failedJobs = null;
   if (pool && dbReady) { try { const q = await pool.query("SELECT count(*) FILTER (WHERE status='queued')::int AS queued, count(*) FILTER (WHERE status='failed')::int AS failed FROM skeleton_jobs"); queuedJobs = q.rows[0].queued; failedJobs = q.rows[0].failed; } catch { database = "error"; } }
-  res.set("Cache-Control", "no-store").json({ version: VERSION, database, queuedJobs, failedJobs, features: ["latest-frame-wins", "worker-inference", "model-ab-benchmark", "specialist-agents", "postgres-jobs-worker", "wondersnap-webgl2-particle-mode", "wondersnap-catalog-build-validation", "fingertip-marker-free-interaction", "bounded-wondersnap-camera-capture", "webrtc-1to1-meeting", "gesture-screen-crack-effect"] });
+  res.set("Cache-Control", "no-store").json({ version: VERSION, database, queuedJobs, failedJobs, features: ["latest-frame-wins", "worker-inference", "model-ab-benchmark", "specialist-agents", "postgres-jobs-worker", "wondersnap-webgl2-particle-mode", "wondersnap-catalog-build-validation", "fingertip-marker-free-interaction", "bounded-wondersnap-camera-capture", "webrtc-1to1-meeting", "random-matchmaking", "in-call-skeleton-gestures", "webrtc-network-stats", "gesture-screen-crack-effect"] });
 });
 const metricsRate = new Map();
 function rateMetrics(req, res, next) {
