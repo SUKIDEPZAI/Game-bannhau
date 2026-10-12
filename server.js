@@ -10,7 +10,7 @@ import { MeetingHub } from "./lib/meeting-hub.js";
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
-const VERSION = "20.5.0";
+const VERSION = "20.5.1";
 const app = express();
 app.disable("x-powered-by");
 app.set("trust proxy", 1);
