@@ -25,7 +25,7 @@ test('v20.2 guide documents actionable poses and latency lab measures pose class
   assert.match(html, /id="gestureGuideBtn"/); assert.match(html, /đẩy bàn tay nhanh về gần camera/);
   assert.match(html, /Chạm đầu ngón cái vào đầu ngón trỏ tạo vòng tròn/);
   assert.match(html, /id="poseLatency"/); assert.match(main, /M\.pose\.push\(poseMs\)/); assert.match(main, /POSE.*hình học \+ ổn định nhãn/);
-  assert.match(read("server.js"), /const VERSION = "20\.4\.0"/); assert.match(gesture, /angleDeg/); assert.match(gesture, /fingerAngleEnter/); assert.match(gesture, /label = "OK"/);
+  assert.match(read("server.js"), /const VERSION = "20\.5\.0"/); assert.match(gesture, /angleDeg/); assert.match(gesture, /fingerAngleEnter/); assert.match(gesture, /label = "OK"/);
 });
 test('v20 gesture actions are local, rate-limited, and shatter effect lasts 3 seconds', () => {
   const main = read('public/js/main.js'); const effects = read('public/js/effects-layer.js'); const css = read('public/css/style.css');

@@ -30,7 +30,7 @@ test('WonderSnap is isolated and only vendored by the Render web build', () => {
   assert.match(render, /name: skeleton-jobs[\s\S]*?buildCommand: npm install\n/);
   assert.match(server, /app\.use\("\/wondersnap\/node_modules"/);
   assert.match(server, /app\.use\("\/wondersnap"/);
-  assert.match(server, /const VERSION = "20\.4\.0"/);
+  assert.match(server, /const VERSION = "20\.5\.0"/);
   assert.match(vendor, /AkbarSheikh-debug\/wondersnap\.git/);
   assert.match(vendor, /DEFAULT_UPSTREAM_COMMIT = 'cf2dcb1f27313175f9b7482bf427f76240452c23'/);
   assert.match(vendor, /upstreamCommit\.toLowerCase\(\) !== requestedCommit\.toLowerCase\(\)/);
