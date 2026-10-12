@@ -20,12 +20,12 @@ test('v20 meeting signaling is bounded, validates peers and supports optional TU
   assert.doesNotMatch(server, /new WebSocketServer/);
 });
 
-test('v20.1 guide documents actionable poses and latency lab measures pose classification', () => {
+test('v20.2 guide documents actionable poses and latency lab measures pose classification', () => {
   const html = read('public/index.html'); const main = read('public/js/main.js'); const gesture = read('public/js/gesture.js');
   assert.match(html, /id="gestureGuideBtn"/); assert.match(html, /đẩy bàn tay nhanh về gần camera/);
   assert.match(html, /Chạm đầu ngón cái vào đầu ngón trỏ tạo vòng tròn/);
   assert.match(html, /id="poseLatency"/); assert.match(main, /M\.pose\.push\(poseMs\)/); assert.match(main, /POSE.*hình học \+ ổn định nhãn/);
-  assert.match(read("server.js"), /const VERSION = "20\.1\.0"/); assert.match(gesture, /angleDeg/); assert.match(gesture, /fingerAngleEnter/); assert.match(gesture, /label = "OK"/);
+  assert.match(read("server.js"), /const VERSION = "20\.4\.0"/); assert.match(gesture, /angleDeg/); assert.match(gesture, /fingerAngleEnter/); assert.match(gesture, /label = "OK"/);
 });
 test('v20 gesture actions are local, rate-limited, and shatter effect lasts 3 seconds', () => {
   const main = read('public/js/main.js'); const effects = read('public/js/effects-layer.js'); const css = read('public/css/style.css');
@@ -49,4 +49,13 @@ test('MeetingHub creates private ephemeral two-person rooms and bounds signaling
   const state = hub.state(created.roomId, guestId); assert.equal(state.messages.length, 1); assert.equal(state.messages[0].type, 'offer');
   assert.equal(hub.signal(created.roomId, hostId, guestId, 'offer', { sdp: 'x'.repeat(17000) }).ok, false);
   assert.equal(hub.leave(created.roomId, guestId).ok, true);
+});
+
+test('v20.2 offers random matchmaking and reuses the local call stream for Skeleton inference', () => {
+  const html = read('public/index.html'); const main = read('public/js/main.js'); const meeting = read('public/js/meeting.js'); const server = read('server.js');
+  assert.match(html, /id="randomMatchBtn"/); assert.match(html, /id="meetNetworkStats"/);
+  assert.match(meeting, /\/api\/meet\/match/); assert.match(meeting, /startNetworkStats/); assert.match(meeting, /currentRoundTripTime/);
+  assert.match(main, /attachMeetingStream\(externalStream\)/); assert.match(main, /onLocalStream: \(localStream\)/);
+  assert.match(main, /document\.body\.appendChild\(canvas\)/); assert.match(main, /zIndex: "1400"/);
+  assert.match(server, /app\.post\("\/api\/meet\/match"/); assert.match(server, /random-matchmaking/);
 });

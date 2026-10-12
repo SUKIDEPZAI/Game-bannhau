@@ -6,11 +6,16 @@ const read = (p) => fs.readFileSync(new URL(`../${p}`, import.meta.url), 'utf8')
 const script = read('scripts/vendor-wondersnap.mjs');
 const main = read('public/js/main.js');
 
-test('WonderSnap vendor patch removes decorative dots and fingertip rings, not interaction', () => {
-  assert.match(script, /landmark-dot drawing changed upstream/);
-  assert.match(script, /fingertip cursor drawing changed upstream/);
-  assert.match(script, /pointer\/dwell interaction stays active/);
-  assert.match(script, /Gesture logic,.*pointer coordinates, dwell timers, hit-testing and pinch actions remain untouched/s);
+test('WonderSnap upgrade replaces the old hand dots with a holographic mesh and joint HUD', () => {
+  const patcher = read('scripts/wondersnap-upgrade.mjs');
+  assert.match(script, /patchWonderSnapApp/);
+  assert.match(script, /localized interaction upgrade/);
+  assert.match(patcher, /Palm triangulation/);
+  assert.match(patcher, /Concentric joint reticles/);
+  assert.match(patcher, /holographic pointer reticle/);
+  assert.match(patcher, /two-hand zoom and rotation/);
+  assert.match(patcher, /pinch-select and hand-following part pull/);
+  assert.match(patcher, /repulsor open-palm thrust detector/);
 });
 
 test('embedded WonderSnap retains upstream camera request instead of unmeasured overrides', () => {

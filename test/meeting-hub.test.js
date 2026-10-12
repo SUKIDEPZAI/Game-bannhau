@@ -69,3 +69,33 @@ test('invalid room/peer identifiers are rejected without allocating a room', () 
   assert.equal(hub.join('not-a-room', host).status, 400);
   assert.equal(hub.state('0123456789abcdef', host).status, 404);
 });
+
+test('random matchmaking pairs two waiting peers in a private two-person room', () => {
+  const { hub } = makeHub();
+  const first = hub.matchmake(host);
+  assert.equal(first.ok, true);
+  assert.equal(first.waiting, true);
+  assert.equal(first.matched, false);
+  const second = hub.matchmake(guest);
+  assert.equal(second.ok, true);
+  assert.equal(second.matched, true);
+  assert.equal(second.waiting, false);
+  assert.equal(second.roomId, first.roomId);
+  const state = hub.state(first.roomId, host);
+  assert.equal(state.peers.length, 2);
+  assert.equal(state.role, 'host');
+  assert.equal(hub.matchQueue.length, 0);
+});
+
+test('random matchmaking can be cancelled and expired queue entries are discarded', () => {
+  const t = makeHub();
+  const first = t.hub.matchmake(host);
+  assert.equal(t.hub.cancelMatchmaking(host).cancelled, true);
+  assert.equal(t.hub.rooms.has(first.roomId), false);
+  assert.equal(t.hub.matchQueue.length, 0);
+  const next = t.hub.matchmake(guest);
+  t.advance(120001);
+  t.hub.cleanup();
+  assert.equal(t.hub.matchQueue.length, 0);
+  assert.equal(t.hub.rooms.has(next.roomId), false, 'stale waiting peer and room are cleaned after the heartbeat timeout');
+});
