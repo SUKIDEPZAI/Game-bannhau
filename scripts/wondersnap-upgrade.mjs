@@ -114,10 +114,19 @@ export function patchWonderSnapApp(source, { fpsPatch } = {}) {
   source = replaceOnce(source, "const CATEGORIES = [...new Set(CATALOG.map((d) => d.category))];", "const CATEGORIES = [...new Set(CATALOG.map((d) => d.category))];\n" + I18N, 'Vietnamese localization helpers');
   source = replaceOnce(source, DRAW_HAND_OLD, DRAW_HAND_NEW, 'holographic hand skeleton');
 
-  source = replaceOnce(source,
-    "      const m = { ...d, def: CATALOG[d.index] };",
-    "      const m = { ...d, def: CATALOG[d.index] };\n      if (Array.isArray(m.labels)) m.labels = m.labels.map((part) => ({ ...part, label: viPart(part.label), info: viInfo(part.info) }));",
-    'Vietnamese model-part labels');
+  // Support both the pinned upstream model-load form and the minimal legacy fixture.
+  // The real pinned app localizes the model returned by store.get(st.index).
+  if (source.includes("      const m = this.store.get(st.index);")) {
+    source = replaceOnce(source,
+      "      const m = this.store.get(st.index);",
+      "      const m = this.store.get(st.index);\n      if (m && Array.isArray(m.labels)) m.labels = m.labels.map((part) => ({ ...part, label: viPart(part.label), info: viInfo(part.info) }));",
+      'Vietnamese model-part labels');
+  } else {
+    source = replaceOnce(source,
+      "      const m = { ...d, def: CATALOG[d.index] };",
+      "      const m = { ...d, def: CATALOG[d.index] };\n      if (Array.isArray(m.labels)) m.labels = m.labels.map((part) => ({ ...part, label: viPart(part.label), info: viInfo(part.info) }));",
+      'Vietnamese model-part labels');
+  }
 
   source = replaceOnce(source,
     "      b.textContent = `${c} · ${CATALOG.filter((d) => d.category === c).length}`; b.dataset.cat = c;",
